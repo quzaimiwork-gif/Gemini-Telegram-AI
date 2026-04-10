@@ -5,22 +5,16 @@ import time
 import random
 from google import genai
 
-# =========================
-# CONFIG
-# =========================
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-ADMIN_ID = 123456789  # 👉 WAJIB tukar ke ID Telegram kau
+ADMIN_ID = 693749347
 
 pending_questions = {}
 
-# =========================
-# LOAD KNOWLEDGE BASE
-# =========================
 with open("knowledge.json") as f:
     KB = json.load(f)
 
@@ -32,25 +26,9 @@ def search_kb(question):
                 results.append(chunk["content"])
     return results[:3]
 
-# =========================
-# PERSONALITY
-# =========================
-openers = [
-    "Soalan yang bagus tu 😄",
-    "Nice question ni 👍",
-    "Menarik soalan ni 👀",
-    "Good one!",
-]
+openers = ["Soalan yang bagus 😄", "Nice question 👍", "Menarik ni 👀"]
+closers = ["Nak detail lagi pun boleh 😊", "Tanya je lagi kalau nak 👍"]
 
-closers = [
-    "Kalau nak, saya boleh explain lagi 👍",
-    "Nak detail lagi pun boleh 😊",
-    "Kalau masih blur, tanya je lagi ya 😄",
-]
-
-# =========================
-# GEMINI (RETRY + STABLE)
-# =========================
 def ask_gemini(prompt):
     for i in range(3):
         try:
@@ -70,9 +48,6 @@ def ask_gemini(prompt):
 
     return None
 
-# =========================
-# USER HANDLER
-# =========================
 @bot.message_handler(func=lambda message: True)
 def handle_user(message):
     try:
@@ -88,10 +63,7 @@ def handle_user(message):
             prompt = f"""
 Anda AI Tutor santai untuk usahawan Malaysia.
 
-Gaya:
-- Santai macam borak
-- Ringkas & mudah faham
-- Boleh bagi contoh
+Jawab secara santai, mudah faham dan beri contoh.
 
 Context:
 {context}
@@ -103,15 +75,9 @@ Soalan:
             ai_response = ask_gemini(prompt)
 
             if ai_response:
-                reply_text = f"{opening}\n\n{ai_response}\n\n{closing}"
-                bot.send_message(user_id, reply_text)
-
+                bot.send_message(user_id, f"{opening}\n\n{ai_response}\n\n{closing}")
             else:
-                # nampak natural (bukan error)
-                bot.send_message(
-                    user_id,
-                    "Saya tengah fikir jawapan ni 😅 tunggu kejap ya..."
-                )
+                bot.send_message(user_id, "Saya tengah fikir 😅 tunggu kejap ya...")
 
                 retry = ask_gemini(prompt)
 
@@ -125,10 +91,7 @@ Soalan:
                         f"User ID: {user_id}\nSoalan: {question}"
                     )
 
-                    bot.send_message(
-                        user_id,
-                        "Line slow sikit 😅 saya pass ke admin ya 👍"
-                    )
+                    bot.send_message(user_id, "Line slow sikit 😅 saya pass ke admin ya 👍")
 
         else:
             pending_questions[user_id] = question
@@ -138,17 +101,11 @@ Soalan:
                 f"User ID: {user_id}\nSoalan: {question}"
             )
 
-            bot.send_message(
-                user_id,
-                "Soalan ni menarik 🤔 saya pass ke admin ya 👍"
-            )
+            bot.send_message(user_id, "Soalan ni menarik 🤔 saya pass ke admin ya 👍")
 
     except Exception as e:
         print("[USER ERROR]:", e)
 
-# =========================
-# ADMIN REPLY HANDLER
-# =========================
 @bot.message_handler(func=lambda m: m.reply_to_message is not None)
 def handle_admin_reply(message):
     try:
@@ -156,23 +113,14 @@ def handle_admin_reply(message):
 
         if "User ID:" in original:
             user_id = int(original.split("\n")[0].replace("User ID: ", ""))
-
             bot.send_message(user_id, message.text)
 
     except Exception as e:
         print("[ADMIN ERROR]:", e)
 
-# =========================
-# START BOT (ANTI-409 FIX)
-# =========================
 print("Bot running...")
 
-# buang webhook lama (WAJIB)
 bot.remove_webhook()
 time.sleep(2)
 
-# polling stabil (anti crash)
-bot.infinity_polling(
-    timeout=20,
-    long_polling_timeout=20
-)
+bot.infinity_polling(timeout=20, long_polling_timeout=20)
