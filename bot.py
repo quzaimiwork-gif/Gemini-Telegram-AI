@@ -3,6 +3,7 @@ import os
 import json
 import time
 import random
+import re
 from google import genai
 
 # =========================
@@ -19,7 +20,41 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# LOAD KNOWLEDGE BASE
+# PERSONA AHMAD
+# =========================
+PERSONA = """
+Nama anda Ahmad.
+
+Anda adalah AI Tutor untuk usahawan di Malaysia.
+
+Kepakaran anda:
+- Web Builder
+- Keusahawanan
+- Digital Marketing
+- Social Media
+- SEO
+- Branding & Website
+
+Gaya komunikasi:
+- Santai macam borak dengan kawan
+- Bahasa Melayu mudah + sedikit English
+- Jangan terlalu formal
+
+Peraturan:
+- Hanya jawab dalam bidang kepakaran
+- Jika luar bidang, maklumkan dan pass kepada admin
+
+Domain:
+- Cadangkan .my atau .com.my hanya bila berkaitan
+- Jangan over promote
+- Guna contoh seperti ali.my atau bisnesku.com.my
+
+Jika ditanya siapa anda:
+- Perkenalkan diri sebagai Ahmad
+"""
+
+# =========================
+# LOAD KB
 # =========================
 with open("knowledge.json") as f:
     KB = json.load(f)
@@ -35,19 +70,11 @@ def search_kb(question):
 # =========================
 # PERSONALITY
 # =========================
-openers = [
-    "*Nice question* 👍",
-    "*Soalan yang bagus* 😄",
-    "*Menarik ni* 👀",
-]
-
-closers = [
-    "_Kalau nak, saya boleh explain lagi_ 👍",
-    "_Nak detail lagi pun boleh_ 😊",
-]
+openers = ["*Nice question* 👍", "*Soalan yang bagus* 😄", "*Menarik ni* 👀"]
+closers = ["_Kalau nak, saya boleh explain lagi_ 👍", "_Nak detail lagi pun boleh_ 😊"]
 
 # =========================
-# GEMINI CALL (RETRY)
+# GEMINI CALL
 # =========================
 def ask_gemini(prompt):
     for i in range(3):
@@ -76,25 +103,16 @@ def classify_intent(text):
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=f"""
-Klasifikasikan ayat ini kepada salah satu sahaja:
+Klasifikasikan ayat ini:
 
-1. SMALL_TALK
-2. QUESTION
-
-Jawab satu perkataan sahaja.
+SMALL_TALK atau QUESTION sahaja.
 
 Ayat:
 {text}
 """
         )
-
         result = response.text.strip().upper()
-
-        if "SMALL_TALK" in result:
-            return "SMALL_TALK"
-        else:
-            return "QUESTION"
-
+        return "SMALL_TALK" if "SMALL_TALK" in result else "QUESTION"
     except:
         return "QUESTION"
 
@@ -107,64 +125,36 @@ def handle_user(message):
         user_id = message.chat.id
         question = message.text
 
-        opening = random.choice(openers)
-        closing = random.choice(closers)
-
-        # detect intent
         if len(question) < 10:
             intent = "SMALL_TALK"
         else:
             intent = classify_intent(question)
 
-        # =========================
         # SMALL TALK
-        # =========================
         if intent == "SMALL_TALK":
             prompt = f"""
-Anda AI mesra.
+{PERSONA}
 
 User cakap:
 {question}
 
-Balas secara santai, friendly dan pendek.
-
-Gunakan format Telegram:
-- Bold guna *text*
-- Jangan guna **
+Balas santai, friendly dan pendek.
 """
-            ai_response = ask_gemini(prompt)
-
-            if ai_response:
-                bot.send_message(user_id, ai_response, parse_mode="Markdown")
-            else:
-                bot.send_message(user_id, "Hi! 😊 Ada apa yang saya boleh bantu?", parse_mode="Markdown")
-
+            reply = ask_gemini(prompt) or "Hi! 😊 Saya Ahmad. Ada apa saya boleh bantu?"
+            bot.send_message(user_id, reply, parse_mode="Markdown")
             return
 
-        # =========================
-        # FACTUAL (USE KB)
-        # =========================
+        # FACTUAL
         context = search_kb(question)
 
         if context:
             prompt = f"""
-Anda AI Tutor untuk usahawan Malaysia.
+{PERSONA}
 
-Gunakan maklumat ini sahaja:
+Gunakan maklumat ini:
 {context}
 
-Jawab secara:
-- Santai
-- Mudah faham
-- Beri contoh
-
-Jika berkaitan domain:
-- Cadangkan guna *domain .my* atau *.com.my*
-- Tekankan kelebihan local branding Malaysia
-
-Gunakan format Telegram:
-- Bold guna *text*
-- Jangan guna **
+Jawab santai, mudah faham dan beri contoh jika sesuai.
 
 Soalan:
 {question}
@@ -172,23 +162,21 @@ Soalan:
             ai_response = ask_gemini(prompt)
 
             if ai_response:
-                reply = f"{opening}\n\n{ai_response}\n\n{closing}"
+                reply = f"{random.choice(openers)}\n\n{ai_response}\n\n{random.choice(closers)}"
                 bot.send_message(user_id, reply, parse_mode="Markdown")
                 return
 
-        # =========================
-        # FALLBACK ADMIN
-        # =========================
+        # FALLBACK
         pending_questions[user_id] = question
 
         bot.send_message(
             ADMIN_ID,
-            f"User ID: {user_id}\nSoalan: {question}"
+            f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
         )
 
         bot.send_message(
             user_id,
-            "Soalan ni menarik 🤔 saya pass ke admin ya 👍",
+            "Soalan ni menarik 🤔 saya pass dekat admin ya 👍",
             parse_mode="Markdown"
         )
 
@@ -196,16 +184,64 @@ Soalan:
         print("[USER ERROR]:", e)
 
 # =========================
-# ADMIN REPLY
+# ADMIN HANDLER (DUAL MODE)
 # =========================
-@bot.message_handler(func=lambda m: m.reply_to_message is not None)
-def handle_admin_reply(message):
+@bot.message_handler(func=lambda message: message.chat.id == ADMIN_ID)
+def handle_admin_message(message):
     try:
-        original = message.reply_to_message.text
+        text = message.text
 
-        if "User ID:" in original:
-            user_id = int(original.split("\n")[0].replace("User ID: ", ""))
-            bot.send_message(user_id, message.text, parse_mode="Markdown")
+        # MODE 1: REPLY BUTTON
+        if message.reply_to_message:
+            original = message.reply_to_message.text
+
+            if "[ADMIN_ALERT]" in original:
+                user_id = int(original.split("\n")[1].replace("User ID: ", ""))
+
+                bot.send_message(user_id, text, parse_mode="Markdown")
+
+                question = pending_questions.get(user_id)
+
+                if question:
+                    with open("knowledge.json", "r+") as f:
+                        data = json.load(f)
+                        data.append({
+                            "id": f"auto_{len(data)+1}",
+                            "keywords": question.lower().split(),
+                            "content": text
+                        })
+                        f.seek(0)
+                        json.dump(data, f, indent=2)
+
+                bot.send_message(ADMIN_ID, "✅ Reply dihantar & disimpan")
+                return
+
+        # MODE 2: ID PARSING
+        numbers = re.findall(r'\b\d{6,}\b', text)
+
+        for num in numbers:
+            user_id = int(num)
+
+            if user_id in pending_questions:
+                clean_text = text.replace(num, "").strip()
+
+                bot.send_message(user_id, clean_text, parse_mode="Markdown")
+
+                question = pending_questions.get(user_id)
+
+                if question:
+                    with open("knowledge.json", "r+") as f:
+                        data = json.load(f)
+                        data.append({
+                            "id": f"auto_{len(data)+1}",
+                            "keywords": question.lower().split(),
+                            "content": clean_text
+                        })
+                        f.seek(0)
+                        json.dump(data, f, indent=2)
+
+                bot.send_message(ADMIN_ID, f"✅ Jawapan dihantar untuk {user_id}")
+                return
 
     except Exception as e:
         print("[ADMIN ERROR]:", e)
