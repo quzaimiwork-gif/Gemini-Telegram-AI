@@ -35,35 +35,23 @@ def search_kb(question):
     return results[:3]
 
 # =========================
-# GEMINI (FINAL FIX VERSION)
+# GEMINI (STABLE VERSION)
 # =========================
 def ask_gemini(prompt):
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
 
-    models = [
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-1.5-flash-latest"  # fallback terakhir
-    ]
+        if hasattr(response, "text") and response.text:
+            return response.text
 
-    for model_name in models:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt
-            )
+        return response.candidates[0].content.parts[0].text
 
-            # ✅ SAFE extraction (avoid crash)
-            if hasattr(response, "text") and response.text:
-                return response.text
-
-            if hasattr(response, "candidates"):
-                return response.candidates[0].content.parts[0].text
-
-        except Exception as e:
-            print(f"[ERROR] Model {model_name} failed:", e)
-            time.sleep(1)
-
-    return "Maaf, sistem AI sedang sibuk. Sila cuba lagi sebentar."
+    except Exception as e:
+        print("[GEMINI ERROR]:", e)
+        return "Maaf, sistem AI sedang sibuk. Sila cuba lagi sebentar."
 
 # =========================
 # USER HANDLER
@@ -76,7 +64,6 @@ def handle_user(message):
 
         context = search_kb(question)
 
-        # ✅ ADA CONTEXT
         if context:
             prompt = f"""
 Anda adalah AI Tutor untuk usahawan Malaysia.
@@ -89,7 +76,7 @@ Jawab secara:
 - Praktikal
 - Mudah faham
 
-Jika tiada jawapan dalam konteks:
+Jika tiada jawapan:
 balas: "Saya tak pasti, admin akan bantu."
 
 Soalan:
@@ -98,7 +85,7 @@ Soalan:
 
             reply_text = ask_gemini(prompt)
 
-            # 🚨 fallback trigger
+            # fallback trigger
             if "admin akan bantu" in reply_text.lower():
                 pending_questions[user_id] = question
 
@@ -109,7 +96,6 @@ Soalan:
 
             bot.send_message(user_id, reply_text)
 
-        # ❌ TAK ADA CONTEXT
         else:
             pending_questions[user_id] = question
 
@@ -124,14 +110,14 @@ Soalan:
             )
 
     except Exception as e:
-        print("[ERROR USER]:", e)
+        print("[USER ERROR]:", e)
         bot.send_message(
             message.chat.id,
             "Maaf, sistem tengah ada gangguan."
         )
 
 # =========================
-# ADMIN REPLY HANDLER
+# ADMIN REPLY
 # =========================
 @bot.message_handler(func=lambda m: m.reply_to_message is not None)
 def handle_admin_reply(message):
@@ -141,10 +127,9 @@ def handle_admin_reply(message):
         if "User ID:" in original:
             user_id = int(original.split("\n")[0].replace("User ID: ", ""))
 
-            # hantar jawapan admin ke user
             bot.send_message(user_id, message.text)
 
-            # 🧠 AUTO LEARNING
+            # auto learning
             question = pending_questions.get(user_id)
 
             if question:
@@ -161,10 +146,14 @@ def handle_admin_reply(message):
                     json.dump(data, f, indent=2)
 
     except Exception as e:
-        print("[ERROR ADMIN]:", e)
+        print("[ADMIN ERROR]:", e)
 
 # =========================
-# START BOT
+# START BOT (FIX 409 ERROR)
 # =========================
 print("Bot running...")
-bot.polling()
+
+bot.remove_webhook()
+time.sleep(1)
+
+bot.polling(non_stop=True)
