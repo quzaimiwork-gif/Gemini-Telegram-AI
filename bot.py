@@ -13,7 +13,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # 👉 GANTI dengan Telegram ID kau nanti
-ADMIN_ID = 123456789  
+ADMIN_ID = 693749347  
 
 # simpan soalan pending
 pending_questions = {}
