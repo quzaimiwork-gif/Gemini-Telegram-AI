@@ -14,12 +14,12 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 bot = telebot.TeleBot(BOT_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-ADMIN_ID = 123456789  # 👉 GANTI dengan ID kau
+ADMIN_ID = 123456789  # 👉 WAJIB tukar
 
 pending_questions = {}
 
 # =========================
-# LOAD KNOWLEDGE BASE
+# LOAD KB
 # =========================
 with open("knowledge.json") as f:
     KB = json.load(f)
@@ -33,43 +33,40 @@ def search_kb(question):
     return results[:3]
 
 # =========================
-# RANDOM PERSONALITY
+# PERSONALITY
 # =========================
 openers = [
     "Soalan yang bagus tu 😄",
     "Nice question ni 👍",
-    "Ramai juga confuse benda ni",
-    "Good one!",
-    "Okay ini menarik 👀",
-    "Best soalan ni actually",
+    "Menarik soalan ni 👀",
 ]
 
 closers = [
-    "Kalau nak, saya boleh bagi contoh lagi 👍",
-    "Nak saya explain lagi detail pun boleh 😊",
-    "Kalau kau nak, kita boleh breakdown lagi step-by-step",
-    "Kalau masih blur, tanya je lagi ya 😄",
-    "Boleh je kalau nak saya bantu lebih detail",
+    "Kalau nak, saya boleh explain lagi 👍",
+    "Nak detail lagi pun boleh 😊",
 ]
 
 # =========================
-# GEMINI (STABLE)
+# GEMINI (FIXED MODEL + RETRY)
 # =========================
 def ask_gemini(prompt):
-    try:
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=prompt
-        )
+    for i in range(3):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",  # ✅ MODEL BETUL
+                contents=prompt
+            )
 
-        if hasattr(response, "text") and response.text:
-            return response.text
+            if hasattr(response, "text") and response.text:
+                return response.text
 
-        return response.candidates[0].content.parts[0].text
+            return response.candidates[0].content.parts[0].text
 
-    except Exception as e:
-        print("[GEMINI ERROR]:", e)
-        return None
+        except Exception as e:
+            print(f"[RETRY {i+1} ERROR]:", e)
+            time.sleep(2)
+
+    return None
 
 # =========================
 # USER HANDLER
@@ -80,30 +77,21 @@ def handle_user(message):
         user_id = message.chat.id
         question = message.text
 
-        context = search_kb(question)
-
         opening = random.choice(openers)
         closing = random.choice(closers)
 
-        # =========================
-        # ADA CONTEXT → AI JAWAB
-        # =========================
+        context = search_kb(question)
+
         if context:
             prompt = f"""
-Anda adalah AI Tutor mesra untuk usahawan Malaysia.
+Anda AI Tutor santai untuk usahawan Malaysia.
 
-Gaya:
-- Santai, macam bercakap dengan kawan
-- Bahasa Melayu mudah + sedikit English
-- Jangan terlalu formal atau skema
+Jawab:
+- Santai macam borak
+- Ringkas & mudah faham
+- Boleh bagi contoh
 
-Struktur:
-- Mulakan dengan ayat engaging
-- Terangkan ringkas
-- Boleh beri contoh mudah
-- Akhiri dengan ayat friendly
-
-Gunakan maklumat ini sahaja:
+Context:
 {context}
 
 Soalan:
@@ -114,23 +102,32 @@ Soalan:
 
             if ai_response:
                 reply_text = f"{opening}\n\n{ai_response}\n\n{closing}"
+                bot.send_message(user_id, reply_text)
+
             else:
-                reply_text = "Maaf, sistem AI tengah sibuk sikit. Cuba lagi kejap ya 🙏"
-
-            # fallback trigger
-            if "tak pasti" in reply_text.lower():
-                pending_questions[user_id] = question
-
+                # retry fallback UX
                 bot.send_message(
-                    ADMIN_ID,
-                    f"User ID: {user_id}\nSoalan: {question}"
+                    user_id,
+                    "Saya tengah fikir jawapan ni 😅 tunggu kejap ya..."
                 )
 
-            bot.send_message(user_id, reply_text)
+                retry = ask_gemini(prompt)
 
-        # =========================
-        # TAK ADA CONTEXT → ADMIN
-        # =========================
+                if retry:
+                    bot.send_message(user_id, f"Okay dah dapat 👇\n\n{retry}")
+                else:
+                    pending_questions[user_id] = question
+
+                    bot.send_message(
+                        ADMIN_ID,
+                        f"User ID: {user_id}\nSoalan: {question}"
+                    )
+
+                    bot.send_message(
+                        user_id,
+                        "Line slow sikit 😅 saya pass ke admin ya 👍"
+                    )
+
         else:
             pending_questions[user_id] = question
 
@@ -141,15 +138,11 @@ Soalan:
 
             bot.send_message(
                 user_id,
-                "Soalan ni menarik 🤔 tapi saya tak pasti. Saya pass dekat admin ya 👍"
+                "Soalan ni menarik 🤔 saya pass ke admin ya 👍"
             )
 
     except Exception as e:
         print("[USER ERROR]:", e)
-        bot.send_message(
-            message.chat.id,
-            "Maaf, sistem tengah ada gangguan."
-        )
 
 # =========================
 # ADMIN REPLY
@@ -164,31 +157,15 @@ def handle_admin_reply(message):
 
             bot.send_message(user_id, message.text)
 
-            # auto learning
-            question = pending_questions.get(user_id)
-
-            if question:
-                with open("knowledge.json", "r+") as f:
-                    data = json.load(f)
-
-                    data.append({
-                        "id": f"auto_{len(data)+1}",
-                        "keywords": [question.lower()],
-                        "content": message.text
-                    })
-
-                    f.seek(0)
-                    json.dump(data, f, indent=2)
-
     except Exception as e:
         print("[ADMIN ERROR]:", e)
 
 # =========================
-# START BOT
+# START BOT (FIX 409)
 # =========================
 print("Bot running...")
 
 bot.remove_webhook()
 time.sleep(1)
 
-bot.polling(non_stop=True)
+bot.polling(non_stop=True, interval=0, timeout=20)
