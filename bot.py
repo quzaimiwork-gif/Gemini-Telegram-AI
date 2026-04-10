@@ -14,12 +14,12 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 bot = telebot.TeleBot(BOT_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-ADMIN_ID = 123456789  # 👉 WAJIB tukar
+ADMIN_ID = 123456789  # 👉 WAJIB tukar ke ID Telegram kau
 
 pending_questions = {}
 
 # =========================
-# LOAD KB
+# LOAD KNOWLEDGE BASE
 # =========================
 with open("knowledge.json") as f:
     KB = json.load(f)
@@ -39,21 +39,23 @@ openers = [
     "Soalan yang bagus tu 😄",
     "Nice question ni 👍",
     "Menarik soalan ni 👀",
+    "Good one!",
 ]
 
 closers = [
     "Kalau nak, saya boleh explain lagi 👍",
     "Nak detail lagi pun boleh 😊",
+    "Kalau masih blur, tanya je lagi ya 😄",
 ]
 
 # =========================
-# GEMINI (FIXED MODEL + RETRY)
+# GEMINI (RETRY + STABLE)
 # =========================
 def ask_gemini(prompt):
     for i in range(3):
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash",  # ✅ MODEL BETUL
+                model="gemini-2.5-flash",
                 contents=prompt
             )
 
@@ -86,7 +88,7 @@ def handle_user(message):
             prompt = f"""
 Anda AI Tutor santai untuk usahawan Malaysia.
 
-Jawab:
+Gaya:
 - Santai macam borak
 - Ringkas & mudah faham
 - Boleh bagi contoh
@@ -105,7 +107,7 @@ Soalan:
                 bot.send_message(user_id, reply_text)
 
             else:
-                # retry fallback UX
+                # nampak natural (bukan error)
                 bot.send_message(
                     user_id,
                     "Saya tengah fikir jawapan ni 😅 tunggu kejap ya..."
@@ -145,7 +147,7 @@ Soalan:
         print("[USER ERROR]:", e)
 
 # =========================
-# ADMIN REPLY
+# ADMIN REPLY HANDLER
 # =========================
 @bot.message_handler(func=lambda m: m.reply_to_message is not None)
 def handle_admin_reply(message):
@@ -161,11 +163,16 @@ def handle_admin_reply(message):
         print("[ADMIN ERROR]:", e)
 
 # =========================
-# START BOT (FIX 409)
+# START BOT (ANTI-409 FIX)
 # =========================
 print("Bot running...")
 
+# buang webhook lama (WAJIB)
 bot.remove_webhook()
-time.sleep(1)
+time.sleep(2)
 
-bot.polling(non_stop=True, interval=0, timeout=20)
+# polling stabil (anti crash)
+bot.infinity_polling(
+    timeout=20,
+    long_polling_timeout=20
+)
