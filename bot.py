@@ -36,14 +36,14 @@ def search_kb(question):
 # PERSONALITY
 # =========================
 openers = [
-    "Nice question 👍",
-    "Soalan yang bagus 😄",
-    "Menarik ni 👀",
+    "*Nice question* 👍",
+    "*Soalan yang bagus* 😄",
+    "*Menarik ni* 👀",
 ]
 
 closers = [
-    "Kalau nak, saya boleh explain lagi 👍",
-    "Nak detail lagi pun boleh 😊",
+    "_Kalau nak, saya boleh explain lagi_ 👍",
+    "_Nak detail lagi pun boleh_ 😊",
 ]
 
 # =========================
@@ -127,13 +127,17 @@ User cakap:
 {question}
 
 Balas secara santai, friendly dan pendek.
+
+Gunakan format Telegram:
+- Bold guna *text*
+- Jangan guna **
 """
             ai_response = ask_gemini(prompt)
 
             if ai_response:
-                bot.send_message(user_id, ai_response)
+                bot.send_message(user_id, ai_response, parse_mode="Markdown")
             else:
-                bot.send_message(user_id, "Hi! 😊 Ada apa yang saya boleh bantu?")
+                bot.send_message(user_id, "Hi! 😊 Ada apa yang saya boleh bantu?", parse_mode="Markdown")
 
             return
 
@@ -155,8 +159,12 @@ Jawab secara:
 - Beri contoh
 
 Jika berkaitan domain:
-- Cadangkan guna .my atau .com.my
+- Cadangkan guna *domain .my* atau *.com.my*
 - Tekankan kelebihan local branding Malaysia
+
+Gunakan format Telegram:
+- Bold guna *text*
+- Jangan guna **
 
 Soalan:
 {question}
@@ -164,7 +172,8 @@ Soalan:
             ai_response = ask_gemini(prompt)
 
             if ai_response:
-                bot.send_message(user_id, f"{opening}\n\n{ai_response}\n\n{closing}")
+                reply = f"{opening}\n\n{ai_response}\n\n{closing}"
+                bot.send_message(user_id, reply, parse_mode="Markdown")
                 return
 
         # =========================
@@ -179,7 +188,8 @@ Soalan:
 
         bot.send_message(
             user_id,
-            "Soalan ni menarik 🤔 saya pass ke admin ya 👍"
+            "Soalan ni menarik 🤔 saya pass ke admin ya 👍",
+            parse_mode="Markdown"
         )
 
     except Exception as e:
@@ -195,19 +205,17 @@ def handle_admin_reply(message):
 
         if "User ID:" in original:
             user_id = int(original.split("\n")[0].replace("User ID: ", ""))
-            bot.send_message(user_id, message.text)
+            bot.send_message(user_id, message.text, parse_mode="Markdown")
 
     except Exception as e:
         print("[ADMIN ERROR]:", e)
 
 # =========================
-# START BOT (FINAL FIX)
+# START BOT
 # =========================
 print("Bot running...")
 
-# clear webhook lama
 bot.remove_webhook()
 time.sleep(2)
 
-# start polling (stable)
 bot.infinity_polling(timeout=20, long_polling_timeout=20)
