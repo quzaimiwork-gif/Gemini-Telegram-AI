@@ -21,7 +21,7 @@ def reply(message):
 
     except Exception as e:
         print("ERROR:", e)
-        bot.reply_to(message, "Maaf, sistem tengah ada gangguan. Cuba lagi nanti.")
+        bot.reply_to(message, "Maaf, sistem tengah ada gangguan.")
 
 print("Bot running...")
 bot.polling()
