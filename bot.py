@@ -2,6 +2,7 @@ import telebot
 import os
 import json
 import time
+import random
 from google import genai
 
 # =========================
@@ -13,8 +14,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 bot = telebot.TeleBot(BOT_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# 👉 GANTI dengan Telegram ID kau
-ADMIN_ID = 693749347  
+ADMIN_ID = 123456789  # 👉 GANTI dengan ID kau
 
 pending_questions = {}
 
@@ -26,21 +26,39 @@ with open("knowledge.json") as f:
 
 def search_kb(question):
     results = []
-
     for chunk in KB:
         for keyword in chunk["keywords"]:
             if keyword.lower() in question.lower():
                 results.append(chunk["content"])
-
     return results[:3]
 
 # =========================
-# GEMINI (STABLE VERSION)
+# RANDOM PERSONALITY
+# =========================
+openers = [
+    "Soalan yang bagus tu 😄",
+    "Nice question ni 👍",
+    "Ramai juga confuse benda ni",
+    "Good one!",
+    "Okay ini menarik 👀",
+    "Best soalan ni actually",
+]
+
+closers = [
+    "Kalau nak, saya boleh bagi contoh lagi 👍",
+    "Nak saya explain lagi detail pun boleh 😊",
+    "Kalau kau nak, kita boleh breakdown lagi step-by-step",
+    "Kalau masih blur, tanya je lagi ya 😄",
+    "Boleh je kalau nak saya bantu lebih detail",
+]
+
+# =========================
+# GEMINI (STABLE)
 # =========================
 def ask_gemini(prompt):
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-1.5-flash",
             contents=prompt
         )
 
@@ -51,7 +69,7 @@ def ask_gemini(prompt):
 
     except Exception as e:
         print("[GEMINI ERROR]:", e)
-        return "Maaf, sistem AI sedang sibuk. Sila cuba lagi sebentar."
+        return None
 
 # =========================
 # USER HANDLER
@@ -64,29 +82,43 @@ def handle_user(message):
 
         context = search_kb(question)
 
+        opening = random.choice(openers)
+        closing = random.choice(closers)
+
+        # =========================
+        # ADA CONTEXT → AI JAWAB
+        # =========================
         if context:
             prompt = f"""
-Anda adalah AI Tutor untuk usahawan Malaysia.
+Anda adalah AI Tutor mesra untuk usahawan Malaysia.
 
-Gunakan maklumat di bawah sahaja:
+Gaya:
+- Santai, macam bercakap dengan kawan
+- Bahasa Melayu mudah + sedikit English
+- Jangan terlalu formal atau skema
+
+Struktur:
+- Mulakan dengan ayat engaging
+- Terangkan ringkas
+- Boleh beri contoh mudah
+- Akhiri dengan ayat friendly
+
+Gunakan maklumat ini sahaja:
 {context}
-
-Jawab secara:
-- Ringkas
-- Praktikal
-- Mudah faham
-
-Jika tiada jawapan:
-balas: "Saya tak pasti, admin akan bantu."
 
 Soalan:
 {question}
 """
 
-            reply_text = ask_gemini(prompt)
+            ai_response = ask_gemini(prompt)
+
+            if ai_response:
+                reply_text = f"{opening}\n\n{ai_response}\n\n{closing}"
+            else:
+                reply_text = "Maaf, sistem AI tengah sibuk sikit. Cuba lagi kejap ya 🙏"
 
             # fallback trigger
-            if "admin akan bantu" in reply_text.lower():
+            if "tak pasti" in reply_text.lower():
                 pending_questions[user_id] = question
 
                 bot.send_message(
@@ -96,6 +128,9 @@ Soalan:
 
             bot.send_message(user_id, reply_text)
 
+        # =========================
+        # TAK ADA CONTEXT → ADMIN
+        # =========================
         else:
             pending_questions[user_id] = question
 
@@ -106,7 +141,7 @@ Soalan:
 
             bot.send_message(
                 user_id,
-                "Saya tak pasti, admin akan bantu."
+                "Soalan ni menarik 🤔 tapi saya tak pasti. Saya pass dekat admin ya 👍"
             )
 
     except Exception as e:
@@ -149,7 +184,7 @@ def handle_admin_reply(message):
         print("[ADMIN ERROR]:", e)
 
 # =========================
-# START BOT (FIX 409 ERROR)
+# START BOT
 # =========================
 print("Bot running...")
 
