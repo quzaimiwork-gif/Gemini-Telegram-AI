@@ -1,0 +1,92 @@
+[
+  {
+    "id": "mynic_role",
+    "keywords": ["mynic", "dns malaysia", "domain malaysia"],
+    "content": "MYNIC ialah agensi rasmi di bawah Kementerian Digital Malaysia yang mengurus domain .my, memastikan kestabilan DNS, keselamatan siber dan membantu PKS beralih ke digital."
+  },
+  {
+    "id": "domain_definition",
+    "keywords": ["domain", "apa itu domain", "nama domain"],
+    "content": "Nama domain ialah alamat unik di internet yang membolehkan pengguna mencari laman web tanpa perlu menghafal IP address yang kompleks."
+  },
+  {
+    "id": "domain_structure",
+    "keywords": ["struktur domain", "extension domain"],
+    "content": "Domain terdiri daripada nama (contoh: maybank2u) dan extension (contoh: .com.my) yang menentukan kategori laman web."
+  },
+  {
+    "id": "domain_types",
+    "keywords": ["jenis domain", "extension malaysia"],
+    "content": "Domain .my terbahagi kepada kategori terbuka seperti .com.my dan .biz.my serta kategori terhad seperti .gov.my dan .edu.my yang memerlukan kelulusan rasmi."
+  },
+  {
+    "id": "domain_importance",
+    "keywords": ["kenapa guna .my", "kelebihan domain malaysia"],
+    "content": "Domain .my meningkatkan kredibiliti, kepercayaan pelanggan dan membantu SEO tempatan kerana Google mengutamakan hasil carian berdasarkan lokasi pengguna."
+  },
+  {
+    "id": "ecosystem",
+    "keywords": ["ekosistem digital", "website vs shopee"],
+    "content": "Laman web adalah pusat digital perniagaan, manakala media sosial menarik trafik dan marketplace seperti Shopee bertindak sebagai saluran jualan tambahan."
+  },
+  {
+    "id": "mykomuniti",
+    "keywords": ["mykomuniti", "platform komuniti"],
+    "content": "MYKomuniti ialah platform MYNIC untuk membantu komuniti tempatan mempromosikan produk, berkongsi maklumat dan meningkatkan kehadiran digital."
+  },
+  {
+    "id": "website_components",
+    "keywords": ["hosting", "web builder", "domain hosting"],
+    "content": "Untuk bina laman web, anda perlukan domain sebagai alamat, hosting sebagai tempat simpan data dan web builder sebagai alat untuk membina laman web."
+  },
+  {
+    "id": "domain_tips",
+    "keywords": ["tips domain", "nama domain bagus"],
+    "content": "Nama domain yang baik mestilah ringkas, mudah diingat, konsisten dengan jenama dan tidak mengandungi simbol atau ejaan yang mengelirukan."
+  },
+  {
+    "id": "domain_register",
+    "keywords": ["cara daftar domain", "mynic prime"],
+    "content": "Untuk mendaftar domain, pilih pakej di MYNIC Prime, semak ketersediaan nama, isi maklumat, masukkan promo code dan lengkapkan pembayaran."
+  },
+  {
+    "id": "mydx",
+    "keywords": ["mydx", "direktori digital malaysia"],
+    "content": "MYDX ialah direktori digital yang meningkatkan visibility perniagaan, memudahkan kolaborasi dan memberi pendedahan kepada usahawan."
+  },
+  {
+    "id": "vpc",
+    "keywords": ["vpc", "value proposition canvas"],
+    "content": "Value Proposition Canvas membantu mengenal pasti keperluan pelanggan melalui Jobs, Pains dan Gains serta mencipta penyelesaian melalui Pain Relievers dan Gain Creators."
+  },
+  {
+    "id": "about_us",
+    "keywords": ["tentang kami", "about us website"],
+    "content": "Halaman About Us perlu mengandungi sejarah, misi, visi dan kredibiliti untuk membina kepercayaan pelanggan terhadap perniagaan."
+  },
+  {
+    "id": "usp",
+    "keywords": ["usp", "unique selling proposition"],
+    "content": "USP ialah kelebihan unik yang membezakan perniagaan anda daripada pesaing dan perlu jelas, bernilai serta sukar ditiru."
+  },
+  {
+    "id": "ai_intro",
+    "keywords": ["ai untuk bisnes", "chatgpt gemini"],
+    "content": "AI seperti ChatGPT dan Gemini membantu menghasilkan teks, imej dan kandungan pemasaran dengan lebih cepat melalui teknik prompting yang jelas."
+  },
+  {
+    "id": "slogan",
+    "keywords": ["slogan", "ayat marketing"],
+    "content": "Slogan mestilah pendek dan mudah diingat, manakala ayat tarikan lebih panjang dan bertujuan menarik perhatian pelanggan di bahagian atas laman web."
+  },
+  {
+    "id": "logo_ai",
+    "keywords": ["buat logo ai", "logo gemini"],
+    "content": "Gunakan AI untuk menghasilkan logo minimalis tanpa teks, fokus pada warna dan gaya moden untuk kegunaan laman web."
+  },
+  {
+    "id": "hero_image",
+    "keywords": ["hero image", "gambar website"],
+    "content": "Hero image perlu bersaiz 1920x1080, tanpa teks dan mempunyai visual yang bersih untuk menarik perhatian pengunjung laman web."
+  }
+]
