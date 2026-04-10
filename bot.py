@@ -69,7 +69,7 @@ def ask_gemini(prompt):
     return None
 
 # =========================
-# INTENT CLASSIFICATION (AI)
+# INTENT CLASSIFICATION
 # =========================
 def classify_intent(text):
     try:
@@ -78,10 +78,10 @@ def classify_intent(text):
             contents=f"""
 Klasifikasikan ayat ini kepada salah satu sahaja:
 
-1. SMALL_TALK (sapaan, sembang kosong)
-2. QUESTION (soalan fakta / perlukan jawapan)
+1. SMALL_TALK
+2. QUESTION
 
-Jawab satu perkataan sahaja: SMALL_TALK atau QUESTION
+Jawab satu perkataan sahaja.
 
 Ayat:
 {text}
@@ -110,16 +110,14 @@ def handle_user(message):
         opening = random.choice(openers)
         closing = random.choice(closers)
 
-        # =========================
-        # DETECT INTENT
-        # =========================
+        # detect intent
         if len(question) < 10:
             intent = "SMALL_TALK"
         else:
             intent = classify_intent(question)
 
         # =========================
-        # MODE 1: SMALL TALK
+        # SMALL TALK
         # =========================
         if intent == "SMALL_TALK":
             prompt = f"""
@@ -140,7 +138,7 @@ Balas secara santai, friendly dan pendek.
             return
 
         # =========================
-        # MODE 2: FACTUAL (USE KB)
+        # FACTUAL (USE KB)
         # =========================
         context = search_kb(question)
 
@@ -170,7 +168,7 @@ Soalan:
                 return
 
         # =========================
-        # MODE 3: FALLBACK ADMIN
+        # FALLBACK ADMIN
         # =========================
         pending_questions[user_id] = question
 
@@ -203,14 +201,13 @@ def handle_admin_reply(message):
         print("[ADMIN ERROR]:", e)
 
 # =========================
-# START BOT (ANTI-409)
+# START BOT (FINAL FIX)
 # =========================
 print("Bot running...")
 
+# clear webhook lama
 bot.remove_webhook()
-time.sleep(3)
-
-bot.close_session()
 time.sleep(2)
 
+# start polling (stable)
 bot.infinity_polling(timeout=20, long_polling_timeout=20)
