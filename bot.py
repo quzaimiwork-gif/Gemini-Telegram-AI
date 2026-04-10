@@ -1,6 +1,7 @@
 import telebot
 import os
 import json
+import time
 from google import genai
 
 # =========================
@@ -12,10 +13,9 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 bot = telebot.TeleBot(BOT_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# 👉 GANTI dengan Telegram ID kau nanti
-ADMIN_ID = 693749347  
+# 👉 GANTI dengan Telegram ID kau
+ADMIN_ID = 123456789  
 
-# simpan soalan pending
 pending_questions = {}
 
 # =========================
@@ -34,9 +34,36 @@ def search_kb(question):
 
     return results[:3]
 
+# =========================
+# GEMINI (RETRY + FALLBACK)
+# =========================
+def ask_gemini(prompt):
+
+    models = [
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-pro-latest"
+    ]
+
+    for model_name in models:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
+
+            try:
+                return response.text
+            except:
+                return response.candidates[0].content.parts[0].text
+
+        except Exception as e:
+            print(f"Model {model_name} failed:", e)
+            time.sleep(1)
+
+    return "Maaf, sistem AI sedang sibuk. Sila cuba lagi sebentar."
 
 # =========================
-# USER MESSAGE HANDLER
+# USER HANDLER
 # =========================
 @bot.message_handler(func=lambda message: True)
 def handle_user(message):
@@ -46,7 +73,7 @@ def handle_user(message):
 
         context = search_kb(question)
 
-        # ✅ IF ADA KNOWLEDGE
+        # ✅ ADA CONTEXT
         if context:
             prompt = f"""
 Anda adalah AI Tutor untuk usahawan Malaysia.
@@ -66,14 +93,9 @@ Soalan:
 {question}
 """
 
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt
-            )
+            reply_text = ask_gemini(prompt)
 
-            reply_text = response.text
-
-            # 🚨 detect kalau AI tak tahu
+            # 🚨 fallback trigger
             if "admin akan bantu" in reply_text.lower():
                 pending_questions[user_id] = question
 
@@ -84,7 +106,7 @@ Soalan:
 
             bot.send_message(user_id, reply_text)
 
-        # ❌ TAK ADA KNOWLEDGE → fallback
+        # ❌ TAK ADA CONTEXT
         else:
             pending_questions[user_id] = question
 
@@ -98,16 +120,15 @@ Soalan:
                 "Saya tak pasti, admin akan bantu."
             )
 
-except Exception as e:
-    print("ERROR:", e)
-    bot.send_message(
-        message.chat.id,
-        f"ERROR DEBUG: {str(e)}"
-    )
-
+    except Exception as e:
+        print("ERROR:", e)
+        bot.send_message(
+            message.chat.id,
+            "Maaf, sistem tengah ada gangguan."
+        )
 
 # =========================
-# ADMIN REPLY HANDLER
+# ADMIN REPLY
 # =========================
 @bot.message_handler(func=lambda m: m.reply_to_message is not None)
 def handle_admin_reply(message):
@@ -117,10 +138,10 @@ def handle_admin_reply(message):
         if "User ID:" in original:
             user_id = int(original.split("\n")[0].replace("User ID: ", ""))
 
-            # hantar jawapan admin ke user
+            # hantar jawapan ke user
             bot.send_message(user_id, message.text)
 
-            # OPTIONAL: auto learn
+            # 🧠 AUTO LEARNING
             question = pending_questions.get(user_id)
 
             if question:
@@ -138,7 +159,6 @@ def handle_admin_reply(message):
 
     except Exception as e:
         print("ADMIN ERROR:", e)
-
 
 # =========================
 # START BOT
