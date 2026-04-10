@@ -9,12 +9,15 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-model = genai.GenerativeModel("gemini-2.0-flash")
+model = genai.GenerativeModel("gemini-1.5-flash-latest")
 
 @bot.message_handler(func=lambda message: True)
 def reply(message):
-    response = model.generate_content(message.text)
-    bot.reply_to(message, response.text)
+    try:
+        response = model.generate_content(message.text)
+        bot.reply_to(message, response.text)
+    except Exception as e:
+        bot.reply_to(message, "Maaf, sistem tengah ada gangguan. Cuba lagi nanti.")
 
 print("Bot running...")
 bot.polling()
