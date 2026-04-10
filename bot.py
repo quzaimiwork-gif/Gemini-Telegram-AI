@@ -35,13 +35,14 @@ def search_kb(question):
     return results[:3]
 
 # =========================
-# GEMINI (RETRY + FALLBACK)
+# GEMINI (FINAL FIX VERSION)
 # =========================
 def ask_gemini(prompt):
 
     models = [
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-pro-latest"
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-1.5-flash-latest"  # fallback terakhir
     ]
 
     for model_name in models:
@@ -51,13 +52,15 @@ def ask_gemini(prompt):
                 contents=prompt
             )
 
-            try:
+            # ✅ SAFE extraction (avoid crash)
+            if hasattr(response, "text") and response.text:
                 return response.text
-            except:
+
+            if hasattr(response, "candidates"):
                 return response.candidates[0].content.parts[0].text
 
         except Exception as e:
-            print(f"Model {model_name} failed:", e)
+            print(f"[ERROR] Model {model_name} failed:", e)
             time.sleep(1)
 
     return "Maaf, sistem AI sedang sibuk. Sila cuba lagi sebentar."
@@ -121,14 +124,14 @@ Soalan:
             )
 
     except Exception as e:
-        print("ERROR:", e)
+        print("[ERROR USER]:", e)
         bot.send_message(
             message.chat.id,
             "Maaf, sistem tengah ada gangguan."
         )
 
 # =========================
-# ADMIN REPLY
+# ADMIN REPLY HANDLER
 # =========================
 @bot.message_handler(func=lambda m: m.reply_to_message is not None)
 def handle_admin_reply(message):
@@ -138,7 +141,7 @@ def handle_admin_reply(message):
         if "User ID:" in original:
             user_id = int(original.split("\n")[0].replace("User ID: ", ""))
 
-            # hantar jawapan ke user
+            # hantar jawapan admin ke user
             bot.send_message(user_id, message.text)
 
             # 🧠 AUTO LEARNING
@@ -158,7 +161,7 @@ def handle_admin_reply(message):
                     json.dump(data, f, indent=2)
 
     except Exception as e:
-        print("ADMIN ERROR:", e)
+        print("[ERROR ADMIN]:", e)
 
 # =========================
 # START BOT
