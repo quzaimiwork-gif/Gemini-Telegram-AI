@@ -98,12 +98,12 @@ Soalan:
                 "Saya tak pasti, admin akan bantu."
             )
 
-    except Exception as e:
-        print("ERROR:", e)
-        bot.send_message(
-            message.chat.id,
-            "Maaf, sistem tengah ada gangguan."
-        )
+except Exception as e:
+    print("ERROR:", e)
+    bot.send_message(
+        message.chat.id,
+        f"ERROR DEBUG: {str(e)}"
+    )
 
 
 # =========================
