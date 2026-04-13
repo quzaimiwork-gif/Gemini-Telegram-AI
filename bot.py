@@ -16,7 +16,6 @@ bot = telebot.TeleBot(BOT_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 ADMIN_ID = 693749347
-
 pending_questions = {}
 
 # =========================
@@ -25,29 +24,26 @@ pending_questions = {}
 PERSONA = """
 Nama anda Ahmad.
 
-Anda adalah AI Tutor untuk usahawan di Malaysia.
+Anda AI Tutor untuk usahawan Malaysia.
 
 Kepakaran:
 - Web Builder
-- Keusahawanan
 - Digital Marketing
-- Social Media
 - SEO
+- Social Media
 - Branding & Website
 
 Gaya:
-- Santai macam borak dengan kawan
+- Santai macam borak
 - Bahasa Melayu mudah + sedikit English
-- Jangan terlalu formal
 
 Peraturan:
-- Jawab dalam bidang kepakaran sahaja
-- Jika luar bidang, maklumkan dan rujuk admin
+- Jawab dalam bidang ini sahaja
+- Jika luar bidang, maklumkan dan pass ke admin
 
 Domain:
-- Cadangkan .my atau .com.my hanya jika berkaitan
-- Jangan over promote
-- Guna contoh seperti ali.my atau bisnesku.com.my
+- Cadangkan .my hanya bila relevan
+- Contoh: ali.my, bisnesku.com.my
 """
 
 # =========================
@@ -65,30 +61,35 @@ def search_kb(question):
     return results[:3]
 
 # =========================
-# PERSONALITY
-# =========================
-openers = ["*Nice question* 👍", "*Soalan yang bagus* 😄", "*Menarik ni* 👀"]
-closers = ["_Kalau nak, saya boleh explain lagi_ 👍", "_Nak detail lagi pun boleh_ 😊"]
-
-# =========================
-# GEMINI
+# GEMINI ULTRA STABLE
 # =========================
 def ask_gemini(prompt):
-    for i in range(3):
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt
-            )
 
-            if hasattr(response, "text") and response.text:
-                return response.text
+    # 🔥 anti-spike delay
+    time.sleep(random.uniform(0.5, 1.5))
 
-            return response.candidates[0].content.parts[0].text
+    models = [
+        "gemini-2.5-flash",
+        "gemini-1.5-flash"
+    ]
 
-        except Exception as e:
-            print(f"[RETRY {i+1} ERROR]:", e)
-            time.sleep(2)
+    for model in models:
+        for i in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt
+                )
+
+                if hasattr(response, "text") and response.text:
+                    return response.text
+
+                if hasattr(response, "candidates"):
+                    return response.candidates[0].content.parts[0].text
+
+            except Exception as e:
+                print(f"[{model} RETRY {i+1} ERROR]:", e)
+                time.sleep(2)
 
     return None
 
@@ -114,28 +115,24 @@ Ayat:
         return "QUESTION"
 
 # =========================
-# IDENTITY DETECTION
+# IDENTITY CHECK
 # =========================
 def is_identity_question(text):
     keywords = [
-        "siapa awak",
-        "siapa anda",
-        "nama awak",
-        "nama anda",
-        "who are you",
-        "your name"
+        "siapa awak", "nama awak",
+        "who are you", "your name"
     ]
     return any(k in text.lower() for k in keywords)
 
 # =========================
-# ADMIN HANDLER (PRIORITY)
+# ADMIN HANDLER
 # =========================
 @bot.message_handler(func=lambda message: message.chat.id == ADMIN_ID)
-def handle_admin_message(message):
+def handle_admin(message):
     try:
         text = message.text
 
-        # MODE 1: Reply button
+        # Reply mode
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -157,10 +154,10 @@ def handle_admin_message(message):
                         f.seek(0)
                         json.dump(data, f, indent=2)
 
-                bot.send_message(ADMIN_ID, "✅ Reply dihantar & disimpan")
+                bot.send_message(ADMIN_ID, "✅ Saved to KB")
                 return
 
-        # MODE 2: ID parsing
+        # ID parsing mode
         numbers = re.findall(r'\b\d{6,}\b', text)
 
         for num in numbers:
@@ -184,22 +181,17 @@ def handle_admin_message(message):
                         f.seek(0)
                         json.dump(data, f, indent=2)
 
-                bot.send_message(ADMIN_ID, f"✅ Jawapan dihantar untuk {user_id}")
+                bot.send_message(ADMIN_ID, f"✅ Sent to {user_id}")
                 return
 
-        # MODE 3: Admin tanya AI
-        prompt = f"""
-{PERSONA}
+        # Admin tanya AI
+        prompt = f"{PERSONA}\n\nSoalan:\n{text}"
+        ai = ask_gemini(prompt)
 
-Soalan:
-{text}
-"""
-        ai_response = ask_gemini(prompt)
-
-        if ai_response:
-            bot.send_message(ADMIN_ID, ai_response, parse_mode="Markdown")
+        if ai:
+            bot.send_message(ADMIN_ID, ai, parse_mode="Markdown")
         else:
-            bot.send_message(ADMIN_ID, "Line slow sikit 😅 cuba lagi")
+            bot.send_message(ADMIN_ID, "Line busy 😅 cuba lagi")
 
     except Exception as e:
         print("[ADMIN ERROR]:", e)
@@ -213,61 +205,44 @@ def handle_user(message):
         user_id = message.chat.id
         question = message.text
 
-        # IDENTITY PRIORITY
+        # Identity
         if is_identity_question(question):
-            reply = (
-                "Hi! Saya *Ahmad* 😊\n\n"
-                "Saya bantu usahawan Malaysia dalam bidang website, SEO, digital marketing "
-                "dan bisnes online.\n\n"
-                "Ada apa saya boleh bantu?"
+            bot.send_message(
+                user_id,
+                "Hi! Saya *Ahmad* 😊\nSaya bantu usahawan dalam digital & bisnes online.",
+                parse_mode="Markdown"
             )
-            bot.send_message(user_id, reply, parse_mode="Markdown")
             return
 
-        # INTENT
-        if len(question) < 10:
-            intent = "SMALL_TALK"
-        else:
-            intent = classify_intent(question)
+        # Intent
+        intent = "SMALL_TALK" if len(question) < 10 else classify_intent(question)
 
-        # SMALL TALK
+        # Small talk
         if intent == "SMALL_TALK":
-            prompt = f"""
-{PERSONA}
-
-User cakap:
-{question}
-
-Balas santai dan friendly.
-"""
-            reply = ask_gemini(prompt) or "Hi! 😊 Saya Ahmad. Ada apa saya boleh bantu?"
+            prompt = f"{PERSONA}\nUser: {question}"
+            reply = ask_gemini(prompt) or "Hi! 😊"
             bot.send_message(user_id, reply, parse_mode="Markdown")
             return
 
-        # FACTUAL
+        # KB
         context = search_kb(question)
 
         if context:
-            prompt = f"""
-{PERSONA}
+            prompt = f"{PERSONA}\nContext:\n{context}\n\nSoalan:\n{question}"
+            ai = ask_gemini(prompt)
 
-Gunakan maklumat ini:
-{context}
-
-Jawab santai, mudah faham dan beri contoh.
-
-Soalan:
-{question}
-"""
-            ai_response = ask_gemini(prompt)
-
-            if ai_response:
-                reply = f"{random.choice(openers)}\n\n{ai_response}\n\n{random.choice(closers)}"
-                bot.send_message(user_id, reply, parse_mode="Markdown")
+            if ai:
+                bot.send_message(user_id, ai, parse_mode="Markdown")
                 return
 
-        # FALLBACK
-        if user_id not in pending_questions:
+        # Smart retry UX
+        bot.send_message(user_id, "Saya tengah fikir 🤔 tunggu sikit ya...")
+
+        retry = ask_gemini(f"{PERSONA}\nSoalan:\n{question}")
+
+        if retry:
+            bot.send_message(user_id, retry, parse_mode="Markdown")
+        else:
             pending_questions[user_id] = question
 
             bot.send_message(
@@ -275,17 +250,17 @@ Soalan:
                 f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
             )
 
-        bot.send_message(
-            user_id,
-            "Soalan ni menarik 🤔 saya pass dekat admin ya 👍",
-            parse_mode="Markdown"
-        )
+            bot.send_message(
+                user_id,
+                "Line agak busy 😅 saya pass ke admin ya",
+                parse_mode="Markdown"
+            )
 
     except Exception as e:
         print("[USER ERROR]:", e)
 
 # =========================
-# START BOT
+# START
 # =========================
 print("Bot running...")
 
