@@ -65,12 +65,11 @@ def search_kb(question):
 # =========================
 def ask_gemini(prompt):
 
-    # 🔥 anti-spike delay
     time.sleep(random.uniform(0.5, 1.5))
 
     models = [
         "gemini-2.5-flash",
-        "gemini-1.5-flash"
+        "gemini-2.0-flash"
     ]
 
     for model in models:
@@ -119,7 +118,7 @@ Ayat:
 # =========================
 def is_identity_question(text):
     keywords = [
-        "siapa awak", "nama awak",
+        "siapa awak", "siapa anda", "nama awak", "nama anda",
         "who are you", "your name"
     ]
     return any(k in text.lower() for k in keywords)
@@ -132,7 +131,7 @@ def handle_admin(message):
     try:
         text = message.text
 
-        # Reply mode
+        # MODE 1: Reply
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -157,7 +156,7 @@ def handle_admin(message):
                 bot.send_message(ADMIN_ID, "✅ Saved to KB")
                 return
 
-        # ID parsing mode
+        # MODE 2: ID parsing
         numbers = re.findall(r'\b\d{6,}\b', text)
 
         for num in numbers:
@@ -184,7 +183,7 @@ def handle_admin(message):
                 bot.send_message(ADMIN_ID, f"✅ Sent to {user_id}")
                 return
 
-        # Admin tanya AI
+        # MODE 3: Admin tanya AI
         prompt = f"{PERSONA}\n\nSoalan:\n{text}"
         ai = ask_gemini(prompt)
 
@@ -243,12 +242,13 @@ def handle_user(message):
         if retry:
             bot.send_message(user_id, retry, parse_mode="Markdown")
         else:
-            pending_questions[user_id] = question
+            if user_id not in pending_questions:
+                pending_questions[user_id] = question
 
-            bot.send_message(
-                ADMIN_ID,
-                f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
-            )
+                bot.send_message(
+                    ADMIN_ID,
+                    f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
+                )
 
             bot.send_message(
                 user_id,
@@ -260,7 +260,7 @@ def handle_user(message):
         print("[USER ERROR]:", e)
 
 # =========================
-# START
+# START BOT
 # =========================
 print("Bot running...")
 
