@@ -26,8 +26,8 @@ vertexai.init(
     location="asia-southeast1"
 )
 
-# ✅ MODEL YANG CONFIRM WORK
-model = GenerativeModel("gemini-1.0-pro")
+# ✅ MODEL PALING STABLE
+model = GenerativeModel("gemini-1.5-flash-001")
 
 # =========================
 # TELEGRAM CONFIG
@@ -61,7 +61,7 @@ Peraturan:
 - Jika luar bidang, maklumkan dan pass ke admin
 
 Domain:
-- Cadangkan .my hanya bila relevan
+- Cadangkan .my hanya bila relevan sahaja
 - Contoh: ali.my, bisnesku.com.my
 """
 
@@ -96,7 +96,7 @@ def ask_ai(prompt):
             if parts:
                 return parts[0].text
 
-        print("[EMPTY RESPONSE STRUCTURE]", response)
+        print("[EMPTY RESPONSE]", response)
 
     except Exception as e:
         print("[VERTEX ERROR]:", e)
@@ -104,12 +104,12 @@ def ask_ai(prompt):
     return None
 
 # =========================
-# INTENT
+# INTENT CLASSIFICATION
 # =========================
 def classify_intent(text):
     try:
         response = model.generate_content(
-            f"Classify: SMALL_TALK or QUESTION\n{text}"
+            f"Klasifikasikan ayat ini: SMALL_TALK atau QUESTION sahaja.\n{text}"
         )
         result = response.text.strip().upper()
         return "SMALL_TALK" if "SMALL_TALK" in result else "QUESTION"
@@ -117,7 +117,7 @@ def classify_intent(text):
         return "QUESTION"
 
 # =========================
-# IDENTITY
+# IDENTITY CHECK
 # =========================
 def is_identity_question(text):
     keywords = [
