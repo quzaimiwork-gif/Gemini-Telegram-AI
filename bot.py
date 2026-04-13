@@ -19,7 +19,7 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# PERSONA
+# PERSONA AHMAD
 # =========================
 PERSONA = """
 Nama anda Ahmad.
@@ -30,14 +30,18 @@ Kepakaran:
 - Digital Marketing
 - SEO
 - Social Media
-- Branding
+- Branding & Website
 
 Gaya:
 - Santai macam borak
 - Melayu + sedikit English
 
+Peraturan:
+- Jawab dalam bidang ini sahaja
+- Jika luar bidang, pass ke admin
+
 Domain:
-- Cadangkan .my bila relevant sahaja
+- Cadangkan .my bila relevan sahaja
 - Contoh: ali.my
 """
 
@@ -56,7 +60,7 @@ def search_kb(question):
     return results[:3]
 
 # =========================
-# GEMINI DEBUG VERSION
+# GEMINI (FINAL STABLE)
 # =========================
 def ask_gemini(prompt):
 
@@ -64,38 +68,29 @@ def ask_gemini(prompt):
 
     models = [
         "gemini-2.5-flash",
-        "gemini-2.0-flash-exp"
+        "gemini-2.0-flash"
     ]
 
     for model in models:
-        for i in range(2):
+        for _ in range(2):
             try:
-                print(f"[TRY MODEL]: {model}")
-
                 response = client.models.generate_content(
                     model=model,
                     contents=prompt
                 )
 
-                print("[RAW RESPONSE]:", response)
-
                 if hasattr(response, "text") and response.text:
-                    print("[SUCCESS TEXT]")
                     return response.text
 
                 if hasattr(response, "candidates"):
                     parts = response.candidates[0].content.parts
                     if parts and hasattr(parts[0], "text"):
-                        print("[SUCCESS CANDIDATE]")
                         return parts[0].text
-
-                print("[EMPTY RESPONSE]")
 
             except Exception as e:
                 print(f"[{model} ERROR]:", e)
                 time.sleep(2)
 
-    print("[ALL MODELS FAILED]")
     return None
 
 # =========================
@@ -105,7 +100,7 @@ def classify_intent(text):
     try:
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=f"Classify: SMALL_TALK or QUESTION\n{text}"
+            contents=f"Classify SMALL_TALK or QUESTION:\n{text}"
         )
         result = response.text.strip().upper()
         return "SMALL_TALK" if "SMALL_TALK" in result else "QUESTION"
@@ -116,7 +111,11 @@ def classify_intent(text):
 # IDENTITY
 # =========================
 def is_identity_question(text):
-    keywords = ["siapa awak", "nama awak", "who are you"]
+    keywords = [
+        "siapa awak", "siapa anda",
+        "nama awak", "nama anda",
+        "who are you", "your name"
+    ]
     return any(k in text.lower() for k in keywords)
 
 # =========================
@@ -127,7 +126,7 @@ def handle_admin(message):
     try:
         text = message.text
 
-        # Reply mode
+        # MODE 1: Reply
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -152,7 +151,7 @@ def handle_admin(message):
                 bot.send_message(ADMIN_ID, "✅ Saved to KB")
                 return
 
-        # ID parsing
+        # MODE 2: ID parsing
         numbers = re.findall(r'\b\d{6,}\b', text)
 
         for num in numbers:
@@ -179,8 +178,8 @@ def handle_admin(message):
                 bot.send_message(ADMIN_ID, f"✅ Sent to {user_id}")
                 return
 
-        # Admin tanya AI
-        ai = ask_gemini(f"{PERSONA}\n{text}")
+        # MODE 3: Admin tanya AI
+        ai = ask_gemini(f"{PERSONA}\n\n{text}")
 
         if ai:
             bot.send_message(ADMIN_ID, ai, parse_mode="Markdown")
@@ -203,7 +202,7 @@ def handle_user(message):
         if is_identity_question(question):
             bot.send_message(
                 user_id,
-                "Hi! Saya *Ahmad* 😊\nSaya bantu usahawan digital.",
+                "Hi! Saya *Ahmad* 😊\nSaya bantu usahawan dalam digital & bisnes online.",
                 parse_mode="Markdown"
             )
             return
@@ -234,16 +233,17 @@ def handle_user(message):
         if retry:
             bot.send_message(user_id, retry, parse_mode="Markdown")
         else:
-            pending_questions[user_id] = question
+            if user_id not in pending_questions:
+                pending_questions[user_id] = question
 
-            bot.send_message(
-                ADMIN_ID,
-                f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
-            )
+                bot.send_message(
+                    ADMIN_ID,
+                    f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
+                )
 
             bot.send_message(
                 user_id,
-                "Line busy 😅 saya pass ke admin",
+                "Line agak busy 😅 saya pass ke admin ya",
                 parse_mode="Markdown"
             )
 
