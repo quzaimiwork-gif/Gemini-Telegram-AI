@@ -26,7 +26,8 @@ vertexai.init(
     location="asia-southeast1"
 )
 
-model = GenerativeModel("gemini-1.5-flash")
+# ✅ MODEL YANG CONFIRM WORK
+model = GenerativeModel("gemini-1.0-pro")
 
 # =========================
 # TELEGRAM CONFIG
@@ -79,14 +80,23 @@ def search_kb(question):
     return results[:3]
 
 # =========================
-# AI FUNCTION (VERTEX)
+# AI FUNCTION (FIXED)
 # =========================
 def ask_ai(prompt):
     try:
         response = model.generate_content(prompt)
 
-        if response and response.text:
+        # direct text
+        if hasattr(response, "text") and response.text:
             return response.text
+
+        # fallback structure
+        if hasattr(response, "candidates"):
+            parts = response.candidates[0].content.parts
+            if parts:
+                return parts[0].text
+
+        print("[EMPTY RESPONSE STRUCTURE]", response)
 
     except Exception as e:
         print("[VERTEX ERROR]:", e)
