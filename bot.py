@@ -27,7 +27,7 @@ Nama anda Ahmad.
 
 Anda adalah AI Tutor untuk usahawan di Malaysia.
 
-Kepakaran anda:
+Kepakaran:
 - Web Builder
 - Keusahawanan
 - Digital Marketing
@@ -35,22 +35,19 @@ Kepakaran anda:
 - SEO
 - Branding & Website
 
-Gaya komunikasi:
+Gaya:
 - Santai macam borak dengan kawan
 - Bahasa Melayu mudah + sedikit English
 - Jangan terlalu formal
 
 Peraturan:
-- Hanya jawab dalam bidang kepakaran
-- Jika luar bidang, maklumkan dan pass kepada admin
+- Jawab dalam bidang kepakaran sahaja
+- Jika luar bidang, maklumkan dan rujuk admin
 
 Domain:
-- Cadangkan .my atau .com.my hanya bila berkaitan
+- Cadangkan .my atau .com.my hanya jika berkaitan
 - Jangan over promote
 - Guna contoh seperti ali.my atau bisnesku.com.my
-
-Jika ditanya siapa anda:
-- Perkenalkan diri sebagai Ahmad
 """
 
 # =========================
@@ -74,7 +71,7 @@ openers = ["*Nice question* 👍", "*Soalan yang bagus* 😄", "*Menarik ni* �
 closers = ["_Kalau nak, saya boleh explain lagi_ 👍", "_Nak detail lagi pun boleh_ 😊"]
 
 # =========================
-# GEMINI CALL
+# GEMINI
 # =========================
 def ask_gemini(prompt):
     for i in range(3):
@@ -117,81 +114,28 @@ Ayat:
         return "QUESTION"
 
 # =========================
-# USER HANDLER
+# IDENTITY DETECTION
 # =========================
-@bot.message_handler(func=lambda message: True)
-def handle_user(message):
-    try:
-        user_id = message.chat.id
-        question = message.text
-
-        if len(question) < 10:
-            intent = "SMALL_TALK"
-        else:
-            intent = classify_intent(question)
-
-        # SMALL TALK
-        if intent == "SMALL_TALK":
-            prompt = f"""
-{PERSONA}
-
-User cakap:
-{question}
-
-Balas santai, friendly dan pendek.
-"""
-            reply = ask_gemini(prompt) or "Hi! 😊 Saya Ahmad. Ada apa saya boleh bantu?"
-            bot.send_message(user_id, reply, parse_mode="Markdown")
-            return
-
-        # FACTUAL
-        context = search_kb(question)
-
-        if context:
-            prompt = f"""
-{PERSONA}
-
-Gunakan maklumat ini:
-{context}
-
-Jawab santai, mudah faham dan beri contoh jika sesuai.
-
-Soalan:
-{question}
-"""
-            ai_response = ask_gemini(prompt)
-
-            if ai_response:
-                reply = f"{random.choice(openers)}\n\n{ai_response}\n\n{random.choice(closers)}"
-                bot.send_message(user_id, reply, parse_mode="Markdown")
-                return
-
-        # FALLBACK
-        pending_questions[user_id] = question
-
-        bot.send_message(
-            ADMIN_ID,
-            f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
-        )
-
-        bot.send_message(
-            user_id,
-            "Soalan ni menarik 🤔 saya pass dekat admin ya 👍",
-            parse_mode="Markdown"
-        )
-
-    except Exception as e:
-        print("[USER ERROR]:", e)
+def is_identity_question(text):
+    keywords = [
+        "siapa awak",
+        "siapa anda",
+        "nama awak",
+        "nama anda",
+        "who are you",
+        "your name"
+    ]
+    return any(k in text.lower() for k in keywords)
 
 # =========================
-# ADMIN HANDLER (DUAL MODE)
+# ADMIN HANDLER (PRIORITY)
 # =========================
 @bot.message_handler(func=lambda message: message.chat.id == ADMIN_ID)
 def handle_admin_message(message):
     try:
         text = message.text
 
-        # MODE 1: REPLY BUTTON
+        # MODE 1: Reply button
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -216,7 +160,7 @@ def handle_admin_message(message):
                 bot.send_message(ADMIN_ID, "✅ Reply dihantar & disimpan")
                 return
 
-        # MODE 2: ID PARSING
+        # MODE 2: ID parsing
         numbers = re.findall(r'\b\d{6,}\b', text)
 
         for num in numbers:
@@ -243,8 +187,102 @@ def handle_admin_message(message):
                 bot.send_message(ADMIN_ID, f"✅ Jawapan dihantar untuk {user_id}")
                 return
 
+        # MODE 3: Admin tanya AI
+        prompt = f"""
+{PERSONA}
+
+Soalan:
+{text}
+"""
+        ai_response = ask_gemini(prompt)
+
+        if ai_response:
+            bot.send_message(ADMIN_ID, ai_response, parse_mode="Markdown")
+        else:
+            bot.send_message(ADMIN_ID, "Line slow sikit 😅 cuba lagi")
+
     except Exception as e:
         print("[ADMIN ERROR]:", e)
+
+# =========================
+# USER HANDLER
+# =========================
+@bot.message_handler(func=lambda message: True)
+def handle_user(message):
+    try:
+        user_id = message.chat.id
+        question = message.text
+
+        # IDENTITY PRIORITY
+        if is_identity_question(question):
+            reply = (
+                "Hi! Saya *Ahmad* 😊\n\n"
+                "Saya bantu usahawan Malaysia dalam bidang website, SEO, digital marketing "
+                "dan bisnes online.\n\n"
+                "Ada apa saya boleh bantu?"
+            )
+            bot.send_message(user_id, reply, parse_mode="Markdown")
+            return
+
+        # INTENT
+        if len(question) < 10:
+            intent = "SMALL_TALK"
+        else:
+            intent = classify_intent(question)
+
+        # SMALL TALK
+        if intent == "SMALL_TALK":
+            prompt = f"""
+{PERSONA}
+
+User cakap:
+{question}
+
+Balas santai dan friendly.
+"""
+            reply = ask_gemini(prompt) or "Hi! 😊 Saya Ahmad. Ada apa saya boleh bantu?"
+            bot.send_message(user_id, reply, parse_mode="Markdown")
+            return
+
+        # FACTUAL
+        context = search_kb(question)
+
+        if context:
+            prompt = f"""
+{PERSONA}
+
+Gunakan maklumat ini:
+{context}
+
+Jawab santai, mudah faham dan beri contoh.
+
+Soalan:
+{question}
+"""
+            ai_response = ask_gemini(prompt)
+
+            if ai_response:
+                reply = f"{random.choice(openers)}\n\n{ai_response}\n\n{random.choice(closers)}"
+                bot.send_message(user_id, reply, parse_mode="Markdown")
+                return
+
+        # FALLBACK
+        if user_id not in pending_questions:
+            pending_questions[user_id] = question
+
+            bot.send_message(
+                ADMIN_ID,
+                f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
+            )
+
+        bot.send_message(
+            user_id,
+            "Soalan ni menarik 🤔 saya pass dekat admin ya 👍",
+            parse_mode="Markdown"
+        )
+
+    except Exception as e:
+        print("[USER ERROR]:", e)
 
 # =========================
 # START BOT
