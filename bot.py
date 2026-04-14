@@ -71,24 +71,32 @@ def to_html(text):
     return text
 
 # =========================
-# AI FUNCTION (ROBUST)
+# AI FUNCTION (STRICT KB)
 # =========================
 def ask_ai(context, question):
 
     context_text = "\n\n".join(context).strip()
 
     if not context_text:
-        print("[DEBUG] Empty context → skip AI", flush=True)
         return None
 
     prompt = f"""
-Jawab soalan berdasarkan maklumat berikut.
+Anda hanya dibenarkan menjawab berdasarkan maklumat di bawah sahaja.
 
-Maklumat:
+JANGAN tambah sebarang maklumat luar.
+JANGAN guna pengetahuan sendiri.
+Jika maklumat tidak mencukupi, jawab:
+"Saya tak pasti berdasarkan maklumat yang ada."
+
+-----------------------
+MAKLUMAT:
 {context_text}
+-----------------------
 
-Soalan:
+SOALAN:
 {question}
+
+JAWAPAN:
 """
 
     try:
@@ -97,18 +105,16 @@ Soalan:
             contents=prompt
         )
 
-        # normal case
+        # normal
         if hasattr(response, "text") and response.text:
             return response.text.strip()
 
-        # fallback (Vertex weird format)
+        # fallback (vertex format)
         if hasattr(response, "candidates"):
             try:
                 return response.candidates[0].content.parts[0].text.strip()
             except:
                 pass
-
-        print("[DEBUG] AI returned empty", flush=True)
 
     except Exception as e:
         print("[AI ERROR]", e, flush=True)
@@ -130,7 +136,6 @@ def handle_admin(message):
     try:
         text = message.text
 
-        # Reply mode
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -191,10 +196,14 @@ def handle_user(message):
             ai = ask_ai(context, question)
 
             if ai:
-                bot.send_message(user_id, to_html(ai), parse_mode="HTML")
-                return
+                # 🔥 FILTER AI (ELAK MERAPU)
+                if "tak pasti" not in ai.lower():
+                    bot.send_message(user_id, to_html(ai), parse_mode="HTML")
+                    return
+                else:
+                    print("[DEBUG] AI insufficient → ADMIN", flush=True)
 
-        # 🔥 FALLBACK → ADMIN
+        # ❌ TAK ADA KB / AI FAIL → ADMIN
         print("[DEBUG] ❌ SEND TO ADMIN", flush=True)
 
         pending_questions[user_id] = question
@@ -220,4 +229,4 @@ print("Bot running...", flush=True)
 bot.remove_webhook()
 time.sleep(2)
 
-bot.infinity_polling(timeout=20, long_polling_timeout=20)
+bot.infinity_polling(skip_pending=True, timeout=20, long_polling_timeout=20)
