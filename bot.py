@@ -18,10 +18,11 @@ if "GOOGLE_CREDENTIALS" in os.environ:
 # VERTEX AI SETUP
 # =========================
 import vertexai
-from vertexai.preview.generative_models import GenerativeModel
+from vertexai.generative_models import GenerativeModel
 
+# Initialize Vertex AI with your project and a supported region
 vertexai.init(
-    project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
+    project=os.environ.get("GOOGLE_CLOUD_PROJECT"), 
     location="asia-southeast1"
 )
 
