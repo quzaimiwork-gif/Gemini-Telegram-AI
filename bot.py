@@ -5,19 +5,6 @@ import time
 import re
 from google import genai
 
-# Initialize the new Client
-client = genai.Client(
-    vertexai=True,
-    project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
-    location="asia-southeast1"
-)
-
-# Use the client to generate content
-response = client.models.generate_content(
-    model="gemini-2.5-pro",
-    contents="Your message here"
-)
-
 # =========================
 # GOOGLE CREDENTIALS (ENV → FILE)
 # =========================
@@ -29,19 +16,14 @@ if "GOOGLE_CREDENTIALS" in os.environ:
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "service-account.json"
 
 # =========================
-# VERTEX AI SETUP
+# GEMINI (VERTEX MODE - NEW SDK)
 # =========================
-import vertexai
-from vertexai.generative_models import GenerativeModel
-
-# Initialize Vertex AI with your project and a supported region
-vertexai.init(
-    project=os.environ.get("GOOGLE_CLOUD_PROJECT"), 
-    location="asia-southeast1"
+client = genai.Client(
+    vertexai=True,
+    project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
+    location="us-central1"  # 🔥 IMPORTANT for Gemini 2.5 Pro
 )
 
-# ✅ MODEL CONFIRM WORKING
-model = GenerativeModel("gemini-2.5-pro")
 # =========================
 # TELEGRAM CONFIG
 # =========================
@@ -58,16 +40,22 @@ PERSONA = """
 Nama anda Ahmad.
 Anda AI Assistant untuk usahawan Malaysia.
 
-Gaya santai, friendly, macam borak.
+Gaya:
+- Santai, friendly, macam borak
+- Melayu + English sikit
+- Jawapan ringkas & jelas
+
 Fokus:
 - Website
 - Digital Marketing
 - SEO
 - Social Media
+
+Kalau sesuai, cadangkan domain .my secara natural.
 """
 
 # =========================
-# LOAD KB
+# LOAD KNOWLEDGE BASE
 # =========================
 with open("knowledge.json") as f:
     KB = json.load(f)
@@ -81,26 +69,23 @@ def search_kb(question):
     return results[:3]
 
 # =========================
-# AI FUNCTION (STABLE)
+# AI FUNCTION (GEMINI 2.5 PRO)
 # =========================
 def ask_ai(prompt):
-    try:
-        response = model.generate_content(prompt)
 
-        # direct
-        if hasattr(response, "text") and response.text:
-            return response.text
+    for i in range(3):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=prompt
+            )
 
-        # fallback
-        if hasattr(response, "candidates"):
-            parts = response.candidates[0].content.parts
-            if parts:
-                return parts[0].text
+            if response.text:
+                return response.text
 
-        print("[EMPTY RESPONSE]", response)
-
-    except Exception as e:
-        print("[VERTEX ERROR]:", e)
+        except Exception as e:
+            print(f"[RETRY {i+1} ERROR]:", e)
+            time.sleep(2)
 
     return None
 
@@ -108,7 +93,10 @@ def ask_ai(prompt):
 # IDENTITY CHECK
 # =========================
 def is_identity_question(text):
-    keywords = ["siapa awak", "nama awak", "who are you"]
+    keywords = [
+        "siapa awak", "nama awak",
+        "who are you", "your name"
+    ]
     return any(k in text.lower() for k in keywords)
 
 # =========================
@@ -118,7 +106,7 @@ def is_identity_question(text):
 def handle_admin(message):
     text = message.text
 
-    # Reply mode
+    # Reply mode (answer user)
     if message.reply_to_message:
         original = message.reply_to_message.text
 
@@ -140,7 +128,7 @@ def handle_admin(message):
                     f.seek(0)
                     json.dump(data, f, indent=2)
 
-            bot.send_message(ADMIN_ID, "✅ Saved")
+            bot.send_message(ADMIN_ID, "✅ Saved to KB")
             return
 
     # Admin ask AI
@@ -160,7 +148,7 @@ def handle_user(message):
     user_id = message.chat.id
     question = message.text
 
-    # Identity
+    # Identity question
     if is_identity_question(question):
         bot.send_message(user_id, "Hi! Saya Ahmad 😊")
         return
@@ -176,7 +164,7 @@ def handle_user(message):
             bot.send_message(user_id, ai)
             return
 
-    # direct AI
+    # Direct AI
     ai = ask_ai(f"{PERSONA}\n{question}")
 
     if ai:
@@ -192,7 +180,7 @@ def handle_user(message):
         bot.send_message(user_id, "Line busy 😅 saya pass ke admin")
 
 # =========================
-# START
+# START BOT
 # =========================
 print("Bot running...")
 
