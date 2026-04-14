@@ -15,7 +15,7 @@ if "GOOGLE_CREDENTIALS" in os.environ:
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "service-account.json"
 
 # =========================
-# GEMINI
+# GEMINI (VERTEX)
 # =========================
 client = genai.Client(
     vertexai=True,
@@ -39,7 +39,7 @@ with open("knowledge.json") as f:
     KB = json.load(f)
 
 # =========================
-# 🔥 SIMPLE MATCH (MACAM HARITU)
+# SIMPLE KB MATCH (MACAM DULU)
 # =========================
 def search_kb(question):
     results = []
@@ -71,15 +71,17 @@ def to_html(text):
     return text
 
 # =========================
-# 🔥 AI FUNCTION (LOCKED)
+# AI FUNCTION (FIXED)
 # =========================
 def ask_ai(context, question):
 
+    context_text = "\n\n".join(context)  # 🔥 CRITICAL FIX
+
     prompt = f"""
-Jawab soalan berdasarkan maklumat berikut sahaja.
+Jawab soalan berdasarkan maklumat berikut.
 
 Maklumat:
-{context}
+{context_text}
 
 Soalan:
 {question}
@@ -91,11 +93,13 @@ Soalan:
             contents=prompt
         )
 
-        return response.text
+        if response.text:
+            return response.text.strip()
 
     except Exception as e:
         print("[AI ERROR]", e, flush=True)
-        return None
+
+    return None
 
 # =========================
 # ADMIN HANDLER
@@ -105,6 +109,7 @@ def handle_admin(message):
     try:
         text = message.text
 
+        # Reply mode (IMPORTANT)
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -147,15 +152,17 @@ def handle_user(message):
 
         context = search_kb(question)
 
-        # 🔥 ONLY IF KB EXISTS
+        # ✅ ADA KB → AI jawab
         if context:
             ai = ask_ai(context, question)
 
             if ai:
                 bot.send_message(user_id, to_html(ai), parse_mode="HTML")
                 return
+            else:
+                print("[DEBUG] AI empty", flush=True)
 
-        # ❌ NO KB → ADMIN ONLY
+        # ❌ TAK ADA KB → ADMIN
         print("[DEBUG] ❌ NO KB → ADMIN", flush=True)
 
         pending_questions[user_id] = question
