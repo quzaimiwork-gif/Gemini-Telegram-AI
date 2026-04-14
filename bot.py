@@ -33,23 +33,13 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# PERSONA (FIXED - NOT TOO STRICT)
+# PERSONA (NORMAL, NOT STRICT)
 # =========================
 SYSTEM_RULE = """
 Nama anda Ahmad.
 Anda AI Assistant untuk usahawan Malaysia.
 
-Fokus:
-- Website
-- SEO
-- Digital Marketing
-- Social Media
-- Domain
-
 Jawab secara santai, jelas dan mudah faham.
-
-Gunakan maklumat yang diberi sebagai rujukan utama,
-dan boleh terangkan dengan gaya sendiri supaya lebih mudah difahami.
 """
 
 # =========================
@@ -59,45 +49,22 @@ with open("knowledge.json") as f:
     KB = json.load(f)
 
 # =========================
-# CLEAN TEXT
-# =========================
-STOPWORDS = {"apa", "itu", "yang", "dan", "ke", "ni", "the", "is"}
-
-def clean_text(text):
-    text = re.sub(r"[^\w\s]", "", text.lower())
-    words = text.split()
-    words = [w for w in words if w not in STOPWORDS]
-    return set(words)
-
-# =========================
-# BALANCED KB MATCH
+# SIMPLE KB SEARCH (MACAM HARITU)
 # =========================
 def search_kb(question):
     results = []
 
-    q_words = clean_text(question)
+    q = question.lower()
 
     print("\n====================", flush=True)
     print("[DEBUG] Question:", question, flush=True)
-    print("[DEBUG] Words:", q_words, flush=True)
 
     for chunk in KB:
-        k_words = set()
-
-        for k in chunk["keywords"]:
-            k_words.update(clean_text(k))
-
-        match = q_words & k_words
-        ratio = len(match) / max(len(q_words), 1)
-
-        print("[DEBUG] Keywords:", k_words, flush=True)
-        print("[DEBUG] Match:", match, flush=True)
-        print("[DEBUG] Ratio:", ratio, flush=True)
-
-        # 🔥 BALANCED CONDITION
-        if len(match) >= 1 and ratio >= 0.3:
-            print("[DEBUG] ✅ ACCEPTED", flush=True)
-            results.append(chunk["content"])
+        for keyword in chunk["keywords"]:
+            if keyword.lower() in q:
+                print("[DEBUG] MATCH:", keyword, flush=True)
+                results.append(chunk["content"])
+                break  # avoid duplicate
 
     print("[DEBUG] Final context:", results, flush=True)
     return results[:3]
@@ -130,7 +97,7 @@ def ask_ai(prompt):
                 return response.text
 
         except Exception as e:
-            print(f"[ERROR]:", e, flush=True)
+            print("[ERROR]", e, flush=True)
             time.sleep(2)
 
     return None
@@ -150,7 +117,7 @@ def handle_admin(message):
     try:
         text = message.text
 
-        # Reply mode (IMPORTANT)
+        # Reply mode
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -177,11 +144,8 @@ def handle_admin(message):
 
         # Admin ask AI
         ai = ask_ai(text)
-
         if ai:
             bot.send_message(ADMIN_ID, to_html(ai), parse_mode="HTML")
-        else:
-            bot.send_message(ADMIN_ID, "AI busy 😅")
 
     except Exception as e:
         print("[ADMIN ERROR]", e, flush=True)
@@ -197,7 +161,6 @@ def handle_user(message):
 
         print("\n[USER]:", question, flush=True)
 
-        # Identity
         if is_identity_question(question):
             bot.send_message(user_id, "Hi! Saya Ahmad 😊")
             return
@@ -206,9 +169,7 @@ def handle_user(message):
 
         context = search_kb(question)
 
-        print("[DEBUG] CONTEXT:", context, flush=True)
-
-        # ✅ IF ADA KB → JAWAB
+        # ✅ ADA KB → jawab
         if context:
             ai = ask_ai(f"{context}\n\nSoalan: {question}")
 
@@ -217,7 +178,7 @@ def handle_user(message):
                 return
 
         # ❌ TAK ADA KB → ADMIN
-        print("[DEBUG] ❌ SEND TO ADMIN", flush=True)
+        print("[DEBUG] ❌ NO KB → ADMIN", flush=True)
 
         pending_questions[user_id] = question
 
