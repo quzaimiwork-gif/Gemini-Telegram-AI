@@ -39,14 +39,8 @@ SYSTEM_RULE = """
 Nama anda Ahmad.
 Anda AI Assistant untuk usahawan Malaysia.
 
-Fokus:
-- Website
-- SEO
-- Digital Marketing
-- Social Media
-- Domain
-
-Jawab ringkas, santai, jelas.
+HANYA jawab berdasarkan maklumat yang diberi.
+Jangan tambah ilmu luar.
 """
 
 # =========================
@@ -56,9 +50,9 @@ with open("knowledge.json") as f:
     KB = json.load(f)
 
 # =========================
-# TEXT CLEANING
+# CLEAN TEXT
 # =========================
-STOPWORDS = {"apa", "itu", "yang", "dan", "ke", "ni"}
+STOPWORDS = {"apa", "itu", "yang", "dan", "ke", "ni", "the", "is"}
 
 def clean_text(text):
     text = re.sub(r"[^\w\s]", "", text.lower())
@@ -67,27 +61,35 @@ def clean_text(text):
     return set(words)
 
 # =========================
-# STRICT KB SEARCH + DEBUG
+# STRICT MATCH ENGINE
 # =========================
 def search_kb(question):
     results = []
 
-    question_words = clean_text(question)
+    q_words = clean_text(question)
 
     print("\n====================", flush=True)
     print("[DEBUG] Question:", question, flush=True)
-    print("[DEBUG] Cleaned words:", question_words, flush=True)
+    print("[DEBUG] Words:", q_words, flush=True)
 
     for chunk in KB:
-        keyword_set = set(clean_text(k) for k in chunk["keywords"])
-        match = question_words & keyword_set
+        k_words = set()
 
-        print("[DEBUG] Checking:", keyword_set, flush=True)
+        for k in chunk["keywords"]:
+            k_words.update(clean_text(k))
+
+        match = q_words & k_words
+
+        # 🔥 MATCH RATIO
+        ratio = len(match) / max(len(q_words), 1)
+
+        print("[DEBUG] Keywords:", k_words, flush=True)
         print("[DEBUG] Match:", match, flush=True)
+        print("[DEBUG] Ratio:", ratio, flush=True)
 
-        # 🔥 STRICT: minimum 2 match
-        if len(match) >= 2:
-            print("[DEBUG] ✅ MATCHED:", chunk["content"][:50], flush=True)
+        # 🔥 STRICT CONDITION
+        if ratio >= 0.6 and len(match) >= 1:
+            print("[DEBUG] ✅ ACCEPTED", flush=True)
             results.append(chunk["content"])
 
     print("[DEBUG] Final context:", results, flush=True)
@@ -121,7 +123,7 @@ def ask_ai(prompt):
                 return response.text
 
         except Exception as e:
-            print(f"[RETRY {i+1} ERROR]:", e, flush=True)
+            print(f"[ERROR]:", e, flush=True)
             time.sleep(2)
 
     return None
@@ -136,7 +138,7 @@ def is_identity_question(text):
 # =========================
 # ADMIN HANDLER
 # =========================
-@bot.message_handler(func=lambda message: message.chat.id == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.chat.id == ADMIN_ID)
 def handle_admin(message):
     try:
         text = message.text
@@ -162,23 +164,20 @@ def handle_admin(message):
                         f.seek(0)
                         json.dump(data, f, indent=2)
 
-                bot.send_message(ADMIN_ID, "✅ Saved to KB")
+                bot.send_message(ADMIN_ID, "✅ Saved")
                 return
 
         ai = ask_ai(text)
-
         if ai:
             bot.send_message(ADMIN_ID, to_html(ai), parse_mode="HTML")
-        else:
-            bot.send_message(ADMIN_ID, "AI busy 😅")
 
     except Exception as e:
-        print("[ADMIN ERROR]:", e, flush=True)
+        print("[ADMIN ERROR]", e, flush=True)
 
 # =========================
-# USER HANDLER (STRICT)
+# USER HANDLER
 # =========================
-@bot.message_handler(func=lambda message: True)
+@bot.message_handler(func=lambda m: True)
 def handle_user(message):
     try:
         user_id = message.chat.id
@@ -192,12 +191,11 @@ def handle_user(message):
 
         bot.send_message(user_id, "Saya tengah fikir 🤔...")
 
-        # 🔥 STRICT KB
         context = search_kb(question)
 
-        # ❌ HARD BLOCK
+        # 🔥 STRICT: ONLY IF MATCH
         if not context:
-            print("[DEBUG] ❌ NO KB MATCH → ADMIN", flush=True)
+            print("[DEBUG] ❌ NO MATCH → ADMIN", flush=True)
 
             pending_questions[user_id] = question
 
@@ -212,14 +210,13 @@ def handle_user(message):
             )
             return
 
-        # ✅ Only answer if KB exists
         ai = ask_ai(f"{context}\n\nSoalan: {question}")
 
         if ai:
             bot.send_message(user_id, to_html(ai), parse_mode="HTML")
 
     except Exception as e:
-        print("[USER ERROR]:", e, flush=True)
+        print("[USER ERROR]", e, flush=True)
 
 # =========================
 # START
