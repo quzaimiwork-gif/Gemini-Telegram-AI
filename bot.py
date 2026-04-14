@@ -3,6 +3,20 @@ import os
 import json
 import time
 import re
+from google import genai
+
+# Initialize the new Client
+client = genai.Client(
+    vertexai=True,
+    project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
+    location="asia-southeast1"
+)
+
+# Use the client to generate content
+response = client.models.generate_content(
+    model="gemini-2.5-pro",
+    contents="Your message here"
+)
 
 # =========================
 # GOOGLE CREDENTIALS (ENV → FILE)
