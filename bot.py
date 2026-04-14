@@ -34,28 +34,20 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# PERSONA + RULE
+# PERSONA
 # =========================
 SYSTEM_RULE = """
 Nama anda Ahmad.
 Anda AI Assistant untuk usahawan Malaysia.
 
-FOKUS:
+Fokus:
 - Website
-- Digital Marketing
 - SEO
+- Digital Marketing
 - Social Media
 - Domain
 
-GAYA:
-- Santai, friendly, macam borak
-- Melayu campur English sikit
-- Jawapan ringkas & jelas
-
-PERATURAN:
-- HANYA jawab dalam bidang di atas
-- Jika luar bidang, jawab:
-  "Maaf, soalan ini di luar skop saya. Saya pass ke admin ya."
+Gaya santai, friendly, ringkas & jelas.
 """
 
 # =========================
@@ -73,14 +65,13 @@ def search_kb(question):
     return results[:3]
 
 # =========================
-# HTML FORMATTER (SAFE)
+# HTML FORMAT
 # =========================
 def to_html(text):
     text = text.replace("&", "&amp;")
     text = text.replace("<", "&lt;")
     text = text.replace(">", "&gt;")
 
-    # bold conversion
     text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
     text = re.sub(r"\*(.*?)\*", r"<b>\1</b>", text)
 
@@ -90,21 +81,17 @@ def to_html(text):
 # AI FUNCTION
 # =========================
 def ask_ai(prompt):
-
     for i in range(3):
         try:
             response = client.models.generate_content(
                 model="gemini-2.5-pro",
                 contents=f"{SYSTEM_RULE}\n\n{prompt}"
             )
-
             if response.text:
                 return response.text
-
         except Exception as e:
             print(f"[RETRY {i+1} ERROR]:", e)
             time.sleep(2)
-
     return None
 
 # =========================
@@ -115,17 +102,6 @@ def is_identity_question(text):
     return any(k in text.lower() for k in keywords)
 
 # =========================
-# DOMAIN FILTER
-# =========================
-def is_relevant(question):
-    keywords = [
-        "website", "seo", "marketing",
-        "bisnes", "domain", "online",
-        "branding", "social media"
-    ]
-    return any(k in question.lower() for k in keywords)
-
-# =========================
 # ADMIN HANDLER
 # =========================
 @bot.message_handler(func=lambda message: message.chat.id == ADMIN_ID)
@@ -133,7 +109,7 @@ def handle_admin(message):
     try:
         text = message.text
 
-        # Reply to user
+        # Reply to user → save to KB
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -170,7 +146,7 @@ def handle_admin(message):
         print("[ADMIN ERROR]:", e)
 
 # =========================
-# USER HANDLER
+# USER HANDLER (STRICT KB)
 # =========================
 @bot.message_handler(func=lambda message: True)
 def handle_user(message):
@@ -185,41 +161,28 @@ def handle_user(message):
 
         bot.send_message(user_id, "Saya tengah fikir 🤔...")
 
-        # KB first
+        # 🔥 STRICT KB MODE
         context = search_kb(question)
 
+        # 1. Kalau ada KB → AI jawab
         if context:
             ai = ask_ai(f"{context}\n\nSoalan: {question}")
             if ai:
                 bot.send_message(user_id, to_html(ai), parse_mode="HTML")
                 return
 
-        # Filter luar domain
-        if not is_relevant(question):
-            pending_questions[user_id] = question
+        # 2. TAK ADA KB → PASS ADMIN
+        pending_questions[user_id] = question
 
-            bot.send_message(
-                ADMIN_ID,
-                f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
-            )
+        bot.send_message(
+            ADMIN_ID,
+            f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
+        )
 
-            bot.send_message(user_id, "Saya pass ke admin ya 👍")
-            return
-
-        # AI direct
-        ai = ask_ai(question)
-
-        if ai:
-            bot.send_message(user_id, to_html(ai), parse_mode="HTML")
-        else:
-            pending_questions[user_id] = question
-
-            bot.send_message(
-                ADMIN_ID,
-                f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
-            )
-
-            bot.send_message(user_id, "Line busy 😅 saya pass ke admin")
+        bot.send_message(
+            user_id,
+            "Soalan ni belum ada dalam sistem saya 🤔 saya pass ke admin ya"
+        )
 
     except Exception as e:
         print("[USER ERROR]:", e)
