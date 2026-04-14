@@ -56,7 +56,6 @@ PERATURAN:
 - HANYA jawab dalam bidang di atas
 - Jika luar bidang, jawab:
   "Maaf, soalan ini di luar skop saya. Saya pass ke admin ya."
-- Jangan mereka-reka jawapan luar topik
 """
 
 # =========================
@@ -74,12 +73,17 @@ def search_kb(question):
     return results[:3]
 
 # =========================
-# SAFE MARKDOWN (TELEGRAM)
+# HTML FORMATTER (SAFE)
 # =========================
-def safe_markdown(text):
-    escape_chars = r"_*[]()~`>#+-=|{}.!\\"
-    for ch in escape_chars:
-        text = text.replace(ch, f"\\{ch}")
+def to_html(text):
+    text = text.replace("&", "&amp;")
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+
+    # bold conversion
+    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"\*(.*?)\*", r"<b>\1</b>", text)
+
     return text
 
 # =========================
@@ -107,14 +111,11 @@ def ask_ai(prompt):
 # IDENTITY CHECK
 # =========================
 def is_identity_question(text):
-    keywords = [
-        "siapa awak", "nama awak",
-        "who are you", "your name"
-    ]
+    keywords = ["siapa awak", "nama awak", "who are you"]
     return any(k in text.lower() for k in keywords)
 
 # =========================
-# SIMPLE DOMAIN FILTER
+# DOMAIN FILTER
 # =========================
 def is_relevant(question):
     keywords = [
@@ -139,7 +140,7 @@ def handle_admin(message):
             if "[ADMIN_ALERT]" in original:
                 user_id = int(original.split("\n")[1].replace("User ID: ", ""))
 
-                bot.send_message(user_id, safe_markdown(text), parse_mode="MarkdownV2")
+                bot.send_message(user_id, to_html(text), parse_mode="HTML")
 
                 question = pending_questions.get(user_id)
 
@@ -161,7 +162,7 @@ def handle_admin(message):
         ai = ask_ai(text)
 
         if ai:
-            bot.send_message(ADMIN_ID, safe_markdown(ai), parse_mode="MarkdownV2")
+            bot.send_message(ADMIN_ID, to_html(ai), parse_mode="HTML")
         else:
             bot.send_message(ADMIN_ID, "AI busy 😅")
 
@@ -190,7 +191,7 @@ def handle_user(message):
         if context:
             ai = ask_ai(f"{context}\n\nSoalan: {question}")
             if ai:
-                bot.send_message(user_id, safe_markdown(ai), parse_mode="MarkdownV2")
+                bot.send_message(user_id, to_html(ai), parse_mode="HTML")
                 return
 
         # Filter luar domain
@@ -209,7 +210,7 @@ def handle_user(message):
         ai = ask_ai(question)
 
         if ai:
-            bot.send_message(user_id, safe_markdown(ai), parse_mode="MarkdownV2")
+            bot.send_message(user_id, to_html(ai), parse_mode="HTML")
         else:
             pending_questions[user_id] = question
 
