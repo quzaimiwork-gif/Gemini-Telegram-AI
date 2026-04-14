@@ -39,7 +39,7 @@ with open("knowledge.json") as f:
     KB = json.load(f)
 
 # =========================
-# SIMPLE KB MATCH (MACAM DULU)
+# SIMPLE KB MATCH
 # =========================
 def search_kb(question):
     results = []
@@ -71,11 +71,15 @@ def to_html(text):
     return text
 
 # =========================
-# AI FUNCTION (FIXED)
+# AI FUNCTION (ROBUST)
 # =========================
 def ask_ai(context, question):
 
-    context_text = "\n\n".join(context)  # 🔥 CRITICAL FIX
+    context_text = "\n\n".join(context).strip()
+
+    if not context_text:
+        print("[DEBUG] Empty context → skip AI", flush=True)
+        return None
 
     prompt = f"""
 Jawab soalan berdasarkan maklumat berikut.
@@ -93,13 +97,30 @@ Soalan:
             contents=prompt
         )
 
-        if response.text:
+        # normal case
+        if hasattr(response, "text") and response.text:
             return response.text.strip()
+
+        # fallback (Vertex weird format)
+        if hasattr(response, "candidates"):
+            try:
+                return response.candidates[0].content.parts[0].text.strip()
+            except:
+                pass
+
+        print("[DEBUG] AI returned empty", flush=True)
 
     except Exception as e:
         print("[AI ERROR]", e, flush=True)
 
     return None
+
+# =========================
+# IDENTITY
+# =========================
+def is_identity_question(text):
+    keywords = ["siapa awak", "nama awak", "who are you"]
+    return any(k in text.lower() for k in keywords)
 
 # =========================
 # ADMIN HANDLER
@@ -109,7 +130,7 @@ def handle_admin(message):
     try:
         text = message.text
 
-        # Reply mode (IMPORTANT)
+        # Reply mode
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -134,6 +155,14 @@ def handle_admin(message):
                 bot.send_message(ADMIN_ID, "✅ Saved to KB")
                 return
 
+        # Admin ask AI
+        ai = ask_ai([text], text)
+
+        if ai:
+            bot.send_message(ADMIN_ID, to_html(ai), parse_mode="HTML")
+        else:
+            bot.send_message(ADMIN_ID, "AI busy 😅")
+
     except Exception as e:
         print("[ADMIN ERROR]", e, flush=True)
 
@@ -148,6 +177,11 @@ def handle_user(message):
 
         print("\n[USER]:", question, flush=True)
 
+        # Identity
+        if is_identity_question(question):
+            bot.send_message(user_id, "Hi! Saya Ahmad 😊")
+            return
+
         bot.send_message(user_id, "Saya tengah fikir 🤔...")
 
         context = search_kb(question)
@@ -159,11 +193,9 @@ def handle_user(message):
             if ai:
                 bot.send_message(user_id, to_html(ai), parse_mode="HTML")
                 return
-            else:
-                print("[DEBUG] AI empty", flush=True)
 
-        # ❌ TAK ADA KB → ADMIN
-        print("[DEBUG] ❌ NO KB → ADMIN", flush=True)
+        # 🔥 FALLBACK → ADMIN
+        print("[DEBUG] ❌ SEND TO ADMIN", flush=True)
 
         pending_questions[user_id] = question
 
