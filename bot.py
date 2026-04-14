@@ -26,7 +26,7 @@ vertexai.init(
 )
 
 # ✅ MODEL CONFIRM WORKING
-model = GenerativeModel("gemini-2.5-flash-lite")
+model = GenerativeModel("gemini-2.5-pro")
 # =========================
 # TELEGRAM CONFIG
 # =========================
