@@ -56,12 +56,28 @@ Gaya santai, friendly, ringkas & jelas.
 with open("knowledge.json") as f:
     KB = json.load(f)
 
+# =========================
+# STRICT KB SEARCH + DEBUG
+# =========================
 def search_kb(question):
     results = []
+    question_words = set(question.lower().split())
+
+    print("\n[DEBUG] Question words:", question_words)
+
     for chunk in KB:
-        for keyword in chunk["keywords"]:
-            if keyword.lower() in question.lower():
-                results.append(chunk["content"])
+        keyword_set = set(k.lower() for k in chunk["keywords"])
+        match = question_words & keyword_set
+
+        print("[DEBUG] Checking:", keyword_set)
+        print("[DEBUG] Match:", match)
+
+        # 🔥 STRICT: minimum 2 keyword match
+        if len(match) >= 2:
+            print("[DEBUG] ✅ MATCHED:", chunk["content"][:60])
+            results.append(chunk["content"])
+
+    print("[DEBUG] Final context:", results)
     return results[:3]
 
 # =========================
@@ -87,11 +103,14 @@ def ask_ai(prompt):
                 model="gemini-2.5-pro",
                 contents=f"{SYSTEM_RULE}\n\n{prompt}"
             )
+
             if response.text:
                 return response.text
+
         except Exception as e:
             print(f"[RETRY {i+1} ERROR]:", e)
             time.sleep(2)
+
     return None
 
 # =========================
@@ -154,6 +173,9 @@ def handle_user(message):
         user_id = message.chat.id
         question = message.text
 
+        print("\n==============================")
+        print("[USER QUESTION]:", question)
+
         # Identity
         if is_identity_question(question):
             bot.send_message(user_id, "Hi! Saya Ahmad 😊")
@@ -161,17 +183,17 @@ def handle_user(message):
 
         bot.send_message(user_id, "Saya tengah fikir 🤔...")
 
-        # 🔥 STRICT KB MODE
+        # 🔥 STRICT KB MATCH
         context = search_kb(question)
 
-        # 1. Kalau ada KB → AI jawab
+        # 1. Ada KB → jawab
         if context:
             ai = ask_ai(f"{context}\n\nSoalan: {question}")
             if ai:
                 bot.send_message(user_id, to_html(ai), parse_mode="HTML")
                 return
 
-        # 2. TAK ADA KB → PASS ADMIN
+        # 2. Tak cukup match → PASS ADMIN
         pending_questions[user_id] = question
 
         bot.send_message(
