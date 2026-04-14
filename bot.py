@@ -16,12 +16,12 @@ if "GOOGLE_CREDENTIALS" in os.environ:
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "service-account.json"
 
 # =========================
-# GEMINI (VERTEX MODE - NEW SDK)
+# GEMINI (VERTEX MODE)
 # =========================
 client = genai.Client(
     vertexai=True,
     project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
-    location="us-central1"  # 🔥 IMPORTANT for Gemini 2.5 Pro
+    location="us-central1"
 )
 
 # =========================
@@ -34,28 +34,33 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# PERSONA AHMAD
+# PERSONA + RULE
 # =========================
-PERSONA = """
+SYSTEM_RULE = """
 Nama anda Ahmad.
 Anda AI Assistant untuk usahawan Malaysia.
 
-Gaya:
-- Santai, friendly, macam borak
-- Melayu + English sikit
-- Jawapan ringkas & jelas
-
-Fokus:
+FOKUS:
 - Website
 - Digital Marketing
 - SEO
 - Social Media
+- Domain
 
-Kalau sesuai, cadangkan domain .my secara natural.
+GAYA:
+- Santai, friendly, macam borak
+- Melayu campur English sikit
+- Jawapan ringkas & jelas
+
+PERATURAN:
+- HANYA jawab dalam bidang di atas
+- Jika luar bidang, jawab:
+  "Maaf, soalan ini di luar skop saya. Saya pass ke admin ya."
+- Jangan mereka-reka jawapan luar topik
 """
 
 # =========================
-# LOAD KNOWLEDGE BASE
+# LOAD KB
 # =========================
 with open("knowledge.json") as f:
     KB = json.load(f)
@@ -69,7 +74,16 @@ def search_kb(question):
     return results[:3]
 
 # =========================
-# AI FUNCTION (GEMINI 2.5 PRO)
+# SAFE MARKDOWN (TELEGRAM)
+# =========================
+def safe_markdown(text):
+    escape_chars = r"_*[]()~`>#+-=|{}.!\\"
+    for ch in escape_chars:
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
+# =========================
+# AI FUNCTION
 # =========================
 def ask_ai(prompt):
 
@@ -77,7 +91,7 @@ def ask_ai(prompt):
         try:
             response = client.models.generate_content(
                 model="gemini-2.5-pro",
-                contents=prompt
+                contents=f"{SYSTEM_RULE}\n\n{prompt}"
             )
 
             if response.text:
@@ -100,87 +114,117 @@ def is_identity_question(text):
     return any(k in text.lower() for k in keywords)
 
 # =========================
+# SIMPLE DOMAIN FILTER
+# =========================
+def is_relevant(question):
+    keywords = [
+        "website", "seo", "marketing",
+        "bisnes", "domain", "online",
+        "branding", "social media"
+    ]
+    return any(k in question.lower() for k in keywords)
+
+# =========================
 # ADMIN HANDLER
 # =========================
 @bot.message_handler(func=lambda message: message.chat.id == ADMIN_ID)
 def handle_admin(message):
-    text = message.text
+    try:
+        text = message.text
 
-    # Reply mode (answer user)
-    if message.reply_to_message:
-        original = message.reply_to_message.text
+        # Reply to user
+        if message.reply_to_message:
+            original = message.reply_to_message.text
 
-        if "[ADMIN_ALERT]" in original:
-            user_id = int(original.split("\n")[1].replace("User ID: ", ""))
+            if "[ADMIN_ALERT]" in original:
+                user_id = int(original.split("\n")[1].replace("User ID: ", ""))
 
-            bot.send_message(user_id, text)
+                bot.send_message(user_id, safe_markdown(text), parse_mode="MarkdownV2")
 
-            question = pending_questions.get(user_id)
+                question = pending_questions.get(user_id)
 
-            if question:
-                with open("knowledge.json", "r+") as f:
-                    data = json.load(f)
-                    data.append({
-                        "id": f"auto_{len(data)+1}",
-                        "keywords": question.lower().split(),
-                        "content": text
-                    })
-                    f.seek(0)
-                    json.dump(data, f, indent=2)
+                if question:
+                    with open("knowledge.json", "r+") as f:
+                        data = json.load(f)
+                        data.append({
+                            "id": f"auto_{len(data)+1}",
+                            "keywords": question.lower().split(),
+                            "content": text
+                        })
+                        f.seek(0)
+                        json.dump(data, f, indent=2)
 
-            bot.send_message(ADMIN_ID, "✅ Saved to KB")
-            return
+                bot.send_message(ADMIN_ID, "✅ Saved to KB")
+                return
 
-    # Admin ask AI
-    ai = ask_ai(f"{PERSONA}\n{text}")
+        # Admin ask AI
+        ai = ask_ai(text)
 
-    if ai:
-        bot.send_message(ADMIN_ID, ai)
-    else:
-        bot.send_message(ADMIN_ID, "AI busy 😅")
+        if ai:
+            bot.send_message(ADMIN_ID, safe_markdown(ai), parse_mode="MarkdownV2")
+        else:
+            bot.send_message(ADMIN_ID, "AI busy 😅")
+
+    except Exception as e:
+        print("[ADMIN ERROR]:", e)
 
 # =========================
 # USER HANDLER
 # =========================
 @bot.message_handler(func=lambda message: True)
 def handle_user(message):
+    try:
+        user_id = message.chat.id
+        question = message.text
 
-    user_id = message.chat.id
-    question = message.text
-
-    # Identity question
-    if is_identity_question(question):
-        bot.send_message(user_id, "Hi! Saya Ahmad 😊")
-        return
-
-    bot.send_message(user_id, "Saya tengah fikir 🤔...")
-
-    # KB first
-    context = search_kb(question)
-
-    if context:
-        ai = ask_ai(f"{PERSONA}\n{context}\n{question}")
-        if ai:
-            bot.send_message(user_id, ai)
+        # Identity
+        if is_identity_question(question):
+            bot.send_message(user_id, "Hi! Saya Ahmad 😊")
             return
 
-    # Direct AI
-    ai = ask_ai(f"{PERSONA}\n{question}")
+        bot.send_message(user_id, "Saya tengah fikir 🤔...")
 
-    if ai:
-        bot.send_message(user_id, ai)
-    else:
-        pending_questions[user_id] = question
+        # KB first
+        context = search_kb(question)
 
-        bot.send_message(
-            ADMIN_ID,
-            f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
-        )
+        if context:
+            ai = ask_ai(f"{context}\n\nSoalan: {question}")
+            if ai:
+                bot.send_message(user_id, safe_markdown(ai), parse_mode="MarkdownV2")
+                return
 
-        bot.send_message(user_id, "Line busy 😅 saya pass ke admin")
+        # Filter luar domain
+        if not is_relevant(question):
+            pending_questions[user_id] = question
+
+            bot.send_message(
+                ADMIN_ID,
+                f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
+            )
+
+            bot.send_message(user_id, "Saya pass ke admin ya 👍")
+            return
+
+        # AI direct
+        ai = ask_ai(question)
+
+        if ai:
+            bot.send_message(user_id, safe_markdown(ai), parse_mode="MarkdownV2")
+        else:
+            pending_questions[user_id] = question
+
+            bot.send_message(
+                ADMIN_ID,
+                f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
+            )
+
+            bot.send_message(user_id, "Line busy 😅 saya pass ke admin")
+
+    except Exception as e:
+        print("[USER ERROR]:", e)
 
 # =========================
-# START BOT
+# START
 # =========================
 print("Bot running...")
 
