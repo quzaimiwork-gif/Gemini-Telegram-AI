@@ -15,7 +15,7 @@ if "GOOGLE_CREDENTIALS" in os.environ:
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "service-account.json"
 
 # =========================
-# GEMINI (VERTEX)
+# GEMINI
 # =========================
 client = genai.Client(
     vertexai=True,
@@ -33,40 +33,28 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# PERSONA (NORMAL, NOT STRICT)
-# =========================
-SYSTEM_RULE = """
-Nama anda Ahmad.
-Anda AI Assistant untuk usahawan Malaysia.
-
-Jawab secara santai, jelas dan mudah faham.
-"""
-
-# =========================
 # LOAD KB
 # =========================
 with open("knowledge.json") as f:
     KB = json.load(f)
 
 # =========================
-# SIMPLE KB SEARCH (MACAM HARITU)
+# 🔥 SIMPLE MATCH (MACAM HARITU)
 # =========================
 def search_kb(question):
     results = []
-
     q = question.lower()
 
-    print("\n====================", flush=True)
-    print("[DEBUG] Question:", question, flush=True)
+    print("\n[DEBUG] Question:", question, flush=True)
 
     for chunk in KB:
         for keyword in chunk["keywords"]:
             if keyword.lower() in q:
                 print("[DEBUG] MATCH:", keyword, flush=True)
                 results.append(chunk["content"])
-                break  # avoid duplicate
+                break
 
-    print("[DEBUG] Final context:", results, flush=True)
+    print("[DEBUG] Context:", results, flush=True)
     return results[:3]
 
 # =========================
@@ -83,31 +71,31 @@ def to_html(text):
     return text
 
 # =========================
-# AI FUNCTION
+# 🔥 AI FUNCTION (LOCKED)
 # =========================
-def ask_ai(prompt):
-    for i in range(3):
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.5-pro",
-                contents=f"{SYSTEM_RULE}\n\n{prompt}"
-            )
+def ask_ai(context, question):
 
-            if response.text:
-                return response.text
+    prompt = f"""
+Jawab soalan berdasarkan maklumat berikut sahaja.
 
-        except Exception as e:
-            print("[ERROR]", e, flush=True)
-            time.sleep(2)
+Maklumat:
+{context}
 
-    return None
+Soalan:
+{question}
+"""
 
-# =========================
-# IDENTITY
-# =========================
-def is_identity_question(text):
-    keywords = ["siapa awak", "nama awak", "who are you"]
-    return any(k in text.lower() for k in keywords)
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=prompt
+        )
+
+        return response.text
+
+    except Exception as e:
+        print("[AI ERROR]", e, flush=True)
+        return None
 
 # =========================
 # ADMIN HANDLER
@@ -117,7 +105,6 @@ def handle_admin(message):
     try:
         text = message.text
 
-        # Reply mode
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -142,11 +129,6 @@ def handle_admin(message):
                 bot.send_message(ADMIN_ID, "✅ Saved to KB")
                 return
 
-        # Admin ask AI
-        ai = ask_ai(text)
-        if ai:
-            bot.send_message(ADMIN_ID, to_html(ai), parse_mode="HTML")
-
     except Exception as e:
         print("[ADMIN ERROR]", e, flush=True)
 
@@ -161,23 +143,19 @@ def handle_user(message):
 
         print("\n[USER]:", question, flush=True)
 
-        if is_identity_question(question):
-            bot.send_message(user_id, "Hi! Saya Ahmad 😊")
-            return
-
         bot.send_message(user_id, "Saya tengah fikir 🤔...")
 
         context = search_kb(question)
 
-        # ✅ ADA KB → jawab
+        # 🔥 ONLY IF KB EXISTS
         if context:
-            ai = ask_ai(f"{context}\n\nSoalan: {question}")
+            ai = ask_ai(context, question)
 
             if ai:
                 bot.send_message(user_id, to_html(ai), parse_mode="HTML")
                 return
 
-        # ❌ TAK ADA KB → ADMIN
+        # ❌ NO KB → ADMIN ONLY
         print("[DEBUG] ❌ NO KB → ADMIN", flush=True)
 
         pending_questions[user_id] = question
