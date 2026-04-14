@@ -33,14 +33,23 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# PERSONA
+# PERSONA (FIXED - NOT TOO STRICT)
 # =========================
 SYSTEM_RULE = """
 Nama anda Ahmad.
 Anda AI Assistant untuk usahawan Malaysia.
 
-HANYA jawab berdasarkan maklumat yang diberi.
-Jangan tambah ilmu luar.
+Fokus:
+- Website
+- SEO
+- Digital Marketing
+- Social Media
+- Domain
+
+Jawab secara santai, jelas dan mudah faham.
+
+Gunakan maklumat yang diberi sebagai rujukan utama,
+dan boleh terangkan dengan gaya sendiri supaya lebih mudah difahami.
 """
 
 # =========================
@@ -61,7 +70,7 @@ def clean_text(text):
     return set(words)
 
 # =========================
-# STRICT MATCH ENGINE
+# BALANCED KB MATCH
 # =========================
 def search_kb(question):
     results = []
@@ -79,16 +88,14 @@ def search_kb(question):
             k_words.update(clean_text(k))
 
         match = q_words & k_words
-
-        # 🔥 MATCH RATIO
         ratio = len(match) / max(len(q_words), 1)
 
         print("[DEBUG] Keywords:", k_words, flush=True)
         print("[DEBUG] Match:", match, flush=True)
         print("[DEBUG] Ratio:", ratio, flush=True)
 
-        # 🔥 STRICT CONDITION
-        if ratio >= 0.6 and len(match) >= 1:
+        # 🔥 BALANCED CONDITION
+        if len(match) >= 1 and ratio >= 0.3:
             print("[DEBUG] ✅ ACCEPTED", flush=True)
             results.append(chunk["content"])
 
@@ -143,6 +150,7 @@ def handle_admin(message):
     try:
         text = message.text
 
+        # Reply mode (IMPORTANT)
         if message.reply_to_message:
             original = message.reply_to_message.text
 
@@ -164,12 +172,16 @@ def handle_admin(message):
                         f.seek(0)
                         json.dump(data, f, indent=2)
 
-                bot.send_message(ADMIN_ID, "✅ Saved")
+                bot.send_message(ADMIN_ID, "✅ Saved to KB")
                 return
 
+        # Admin ask AI
         ai = ask_ai(text)
+
         if ai:
             bot.send_message(ADMIN_ID, to_html(ai), parse_mode="HTML")
+        else:
+            bot.send_message(ADMIN_ID, "AI busy 😅")
 
     except Exception as e:
         print("[ADMIN ERROR]", e, flush=True)
@@ -185,6 +197,7 @@ def handle_user(message):
 
         print("\n[USER]:", question, flush=True)
 
+        # Identity
         if is_identity_question(question):
             bot.send_message(user_id, "Hi! Saya Ahmad 😊")
             return
@@ -193,27 +206,30 @@ def handle_user(message):
 
         context = search_kb(question)
 
-        # 🔥 STRICT: ONLY IF MATCH
-        if not context:
-            print("[DEBUG] ❌ NO MATCH → ADMIN", flush=True)
+        print("[DEBUG] CONTEXT:", context, flush=True)
 
-            pending_questions[user_id] = question
+        # ✅ IF ADA KB → JAWAB
+        if context:
+            ai = ask_ai(f"{context}\n\nSoalan: {question}")
 
-            bot.send_message(
-                ADMIN_ID,
-                f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
-            )
+            if ai:
+                bot.send_message(user_id, to_html(ai), parse_mode="HTML")
+                return
 
-            bot.send_message(
-                user_id,
-                "Soalan ni belum ada dalam sistem saya 🤔 saya pass ke admin ya"
-            )
-            return
+        # ❌ TAK ADA KB → ADMIN
+        print("[DEBUG] ❌ SEND TO ADMIN", flush=True)
 
-        ai = ask_ai(f"{context}\n\nSoalan: {question}")
+        pending_questions[user_id] = question
 
-        if ai:
-            bot.send_message(user_id, to_html(ai), parse_mode="HTML")
+        bot.send_message(
+            ADMIN_ID,
+            f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
+        )
+
+        bot.send_message(
+            user_id,
+            "Soalan ni belum ada dalam sistem saya 🤔 saya pass ke admin ya"
+        )
 
     except Exception as e:
         print("[USER ERROR]", e, flush=True)
