@@ -18,7 +18,7 @@ if "GOOGLE_CREDENTIALS" in os.environ:
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "service-account.json"
 
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
-DATA_STORE_ID = os.environ.get("DATA_STORE_ID")
+ENGINE_ID = os.environ.get("ENGINE_ID")
 
 # =========================
 # GEMINI
@@ -30,11 +30,11 @@ client = genai.Client(
 )
 
 # =========================
-# VERTEX SEARCH
+# VERTEX SEARCH (ENGINE MODE)
 # =========================
 search_client = discoveryengine.SearchServiceClient()
 
-serving_config = f"projects/{PROJECT_ID}/locations/global/collections/default_collection/dataStores/{DATA_STORE_ID}/servingConfigs/default_config"
+SERVING_CONFIG = f"{ENGINE_ID}/servingConfigs/default_config"
 
 # =========================
 # TELEGRAM
@@ -46,13 +46,13 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# SEARCH FUNCTION (IMPROVED)
+# SEARCH FUNCTION (ENGINE)
 # =========================
 def search_vertex(question):
     try:
         request = discoveryengine.SearchRequest(
-            serving_config=serving_config,
-            query=f"{question} explain meaning definition Malaysia context",
+            serving_config=SERVING_CONFIG,
+            query=question,
             page_size=5
         )
 
@@ -80,10 +80,10 @@ def to_html(text):
     text = text.replace("‘", "'").replace("’", "'")
     text = text.replace("“", '"').replace("”", '"')
 
-    # convert ### to bold
+    # Convert ### to bold
     text = re.sub(r"### (.*?)\n", r"<b>\1</b>\n", text)
 
-    # escape HTML
+    # Escape HTML
     text = text.replace("&", "&amp;")
     text = text.replace("<", "&lt;")
     text = text.replace(">", "&gt;")
@@ -135,7 +135,7 @@ Soalan:
     return None
 
 # =========================
-# MAIN HANDLER (FIXED)
+# MAIN HANDLER
 # =========================
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
@@ -193,6 +193,6 @@ def handle_all(message):
 bot.remove_webhook()
 time.sleep(2)
 
-print("🚀 Bot running FINAL (Vertex RAG)...", flush=True)
+print("🚀 Bot running FINAL (ENGINE MODE)...", flush=True)
 
 bot.infinity_polling(skip_pending=True)
