@@ -46,14 +46,14 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# SEARCH
+# SEARCH FUNCTION (IMPROVED)
 # =========================
 def search_vertex(question):
     try:
         request = discoveryengine.SearchRequest(
             serving_config=serving_config,
-            query=question,
-            page_size=3
+            query=f"{question} explain meaning definition Malaysia context",
+            page_size=5
         )
 
         response = search_client.search(request)
@@ -74,31 +74,46 @@ def search_vertex(question):
         return []
 
 # =========================
-# FORMAT
+# FORMAT OUTPUT
 # =========================
 def to_html(text):
     text = text.replace("‘", "'").replace("’", "'")
     text = text.replace("“", '"').replace("”", '"')
+
+    # convert ### to bold
     text = re.sub(r"### (.*?)\n", r"<b>\1</b>\n", text)
-    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # escape HTML
+    text = text.replace("&", "&amp;")
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+
     return text
 
 # =========================
-# AI
+# AI FUNCTION (STRICT KB)
 # =========================
 def ask_ai(context, question):
 
     if not context:
         return None
 
+    context_text = "\n\n".join(context)
+
     prompt = f"""
 Jawab hanya berdasarkan maklumat ini sahaja.
 
-Jika tak cukup, jawab:
+Guna gaya santai, mudah faham.
+
+DILARANG:
+- guna pengetahuan luar
+- tambah fakta sendiri
+
+Jika maklumat tak cukup, jawab:
 "tak cukup info"
 
 -----------------------
-{chr(10).join(context)}
+{context_text}
 -----------------------
 
 Soalan:
@@ -106,13 +121,13 @@ Soalan:
 """
 
     try:
-        r = client.models.generate_content(
+        response = client.models.generate_content(
             model="gemini-2.5-pro",
             contents=prompt
         )
 
-        if hasattr(r, "text"):
-            return r.text.strip()
+        if hasattr(response, "text") and response.text:
+            return response.text.strip()
 
     except Exception as e:
         print("[AI ERROR]", e, flush=True)
@@ -120,7 +135,7 @@ Soalan:
     return None
 
 # =========================
-# SINGLE HANDLER (FIX)
+# MAIN HANDLER (FIXED)
 # =========================
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
@@ -132,7 +147,6 @@ def handle_all(message):
 
         # ================= ADMIN =================
         if user_id == ADMIN_ID:
-
             if message.reply_to_message:
                 original = message.reply_to_message.text
 
@@ -156,6 +170,8 @@ def handle_all(message):
                 return
 
         # ================= FALLBACK =================
+        print("[DEBUG] SEND TO ADMIN", flush=True)
+
         pending_questions[user_id] = text
 
         bot.send_message(
@@ -172,11 +188,11 @@ def handle_all(message):
         print("[ERROR]", e, flush=True)
 
 # =========================
-# START
+# START BOT
 # =========================
 bot.remove_webhook()
 time.sleep(2)
 
-print("🚀 Bot running FINAL...", flush=True)
+print("🚀 Bot running FINAL (Vertex RAG)...", flush=True)
 
 bot.infinity_polling(skip_pending=True)
