@@ -33,7 +33,6 @@ client = genai.Client(
 # VERTEX SEARCH (ENGINE MODE)
 # =========================
 search_client = discoveryengine.SearchServiceClient()
-
 SERVING_CONFIG = f"{ENGINE_ID}/servingConfigs/default_config"
 
 # =========================
@@ -46,14 +45,24 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# SEARCH FUNCTION (ENGINE)
+# SEARCH FUNCTION (SEMANTIC)
 # =========================
 def search_vertex(question):
     try:
         request = discoveryengine.SearchRequest(
             serving_config=SERVING_CONFIG,
             query=question,
-            page_size=5
+            page_size=5,
+
+            content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
+                snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(
+                    return_snippet=True
+                ),
+                extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
+                    max_extractive_answer_count=3,
+                    max_extractive_segment_count=5
+                )
+            )
         )
 
         response = search_client.search(request)
@@ -61,10 +70,20 @@ def search_vertex(question):
         results = []
 
         for r in response.results:
-            if r.document and r.document.derived_struct_data:
-                text = r.document.derived_struct_data.get("text", "")
-                if text:
-                    results.append(text)
+            if r.document:
+                data = r.document.derived_struct_data
+
+                if data:
+                    snippets = data.get("snippets", [])
+                    extractive = data.get("extractive_answers", [])
+
+                    for s in snippets:
+                        if "snippet" in s:
+                            results.append(s["snippet"])
+
+                    for e in extractive:
+                        if "content" in e:
+                            results.append(e["content"])
 
         print("[DEBUG] Vertex:", len(results), flush=True)
         return results
@@ -80,10 +99,8 @@ def to_html(text):
     text = text.replace("‘", "'").replace("’", "'")
     text = text.replace("“", '"').replace("”", '"')
 
-    # Convert ### to bold
     text = re.sub(r"### (.*?)\n", r"<b>\1</b>\n", text)
 
-    # Escape HTML
     text = text.replace("&", "&amp;")
     text = text.replace("<", "&lt;")
     text = text.replace(">", "&gt;")
@@ -193,6 +210,6 @@ def handle_all(message):
 bot.remove_webhook()
 time.sleep(2)
 
-print("🚀 Bot running FINAL (ENGINE MODE)...", flush=True)
+print("🚀 Bot running FINAL (SEMANTIC ENGINE MODE)...", flush=True)
 
 bot.infinity_polling(skip_pending=True)
