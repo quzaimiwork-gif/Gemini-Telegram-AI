@@ -4,6 +4,7 @@ import json
 import time
 import re
 from google import genai
+from google.cloud import discoveryengine_v1 as discoveryengine
 
 # =========================
 # GOOGLE CREDENTIALS
@@ -14,14 +15,25 @@ if "GOOGLE_CREDENTIALS" in os.environ:
         json.dump(creds, f)
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "service-account.json"
 
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
+LOCATION = "global"
+DATA_STORE_ID = os.environ.get("DATA_STORE_ID")
+
 # =========================
-# GEMINI (VERTEX)
+# GEMINI
 # =========================
 client = genai.Client(
     vertexai=True,
-    project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
+    project=PROJECT_ID,
     location="us-central1"
 )
+
+# =========================
+# VERTEX SEARCH CLIENT
+# =========================
+search_client = discoveryengine.SearchServiceClient()
+
+serving_config = f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/dataStores/{DATA_STORE_ID}/servingConfigs/default_config"
 
 # =========================
 # TELEGRAM
@@ -33,70 +45,76 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# LOAD KB
+# SEARCH FROM PDF
 # =========================
-with open("knowledge.json") as f:
-    KB = json.load(f)
+def search_vertex(question):
+    try:
+        request = discoveryengine.SearchRequest(
+            serving_config=serving_config,
+            query=question,
+            page_size=3
+        )
+
+        response = search_client.search(request)
+
+        results = []
+
+        for res in response.results:
+            if res.document and res.document.derived_struct_data:
+                text = res.document.derived_struct_data.get("text", "")
+                if text:
+                    results.append(text)
+
+        print("[DEBUG] Found:", len(results), flush=True)
+        return results
+
+    except Exception as e:
+        print("[VERTEX ERROR]:", e, flush=True)
+        return []
 
 # =========================
-# SIMPLE KB MATCH
-# =========================
-def search_kb(question):
-    results = []
-    q = question.lower()
-
-    print("\n[DEBUG] Question:", question, flush=True)
-
-    for chunk in KB:
-        for keyword in chunk["keywords"]:
-            if keyword.lower() in q:
-                print("[DEBUG] MATCH:", keyword, flush=True)
-                results.append(chunk["content"])
-                break
-
-    print("[DEBUG] Context:", results, flush=True)
-    return results[:3]
-
-# =========================
-# HTML FORMAT
+# FORMAT OUTPUT
 # =========================
 def to_html(text):
+    text = text.replace("‘", "'").replace("’", "'")
+    text = text.replace("“", '"').replace("”", '"')
+
+    text = re.sub(r"### (.*?)\n", r"<b>\1</b>\n", text)
+
     text = text.replace("&", "&amp;")
     text = text.replace("<", "&lt;")
     text = text.replace(">", "&gt;")
 
-    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
-    text = re.sub(r"\*(.*?)\*", r"<b>\1</b>", text)
-
     return text
 
 # =========================
-# AI FUNCTION (STRICT KB)
+# AI FUNCTION (STRICT)
 # =========================
 def ask_ai(context, question):
 
-    context_text = "\n\n".join(context).strip()
-
-    if not context_text:
+    if not context:
         return None
 
-    prompt = f"""
-Anda hanya dibenarkan menjawab berdasarkan maklumat di bawah sahaja.
+    context_text = "\n\n".join(context)
 
-JANGAN tambah sebarang maklumat luar.
-JANGAN guna pengetahuan sendiri.
-Jika maklumat tidak mencukupi, jawab:
-"Saya tak pasti berdasarkan maklumat yang ada."
+    prompt = f"""
+Jawab hanya berdasarkan maklumat ini sahaja.
+
+Gaya santai, macam sembang biasa.
+
+DILARANG:
+- guna pengetahuan luar
+- tambah fakta sendiri
+
+Jika maklumat tak cukup, jawab:
+"tak cukup info"
 
 -----------------------
-MAKLUMAT:
 {context_text}
 -----------------------
 
-SOALAN:
+Soalan:
 {question}
-
-JAWAPAN:
 """
 
     try:
@@ -105,28 +123,13 @@ JAWAPAN:
             contents=prompt
         )
 
-        # normal
         if hasattr(response, "text") and response.text:
             return response.text.strip()
 
-        # fallback (vertex format)
-        if hasattr(response, "candidates"):
-            try:
-                return response.candidates[0].content.parts[0].text.strip()
-            except:
-                pass
-
     except Exception as e:
-        print("[AI ERROR]", e, flush=True)
+        print("[AI ERROR]:", e, flush=True)
 
     return None
-
-# =========================
-# IDENTITY
-# =========================
-def is_identity_question(text):
-    keywords = ["siapa awak", "nama awak", "who are you"]
-    return any(k in text.lower() for k in keywords)
 
 # =========================
 # ADMIN HANDLER
@@ -134,39 +137,14 @@ def is_identity_question(text):
 @bot.message_handler(func=lambda m: m.chat.id == ADMIN_ID)
 def handle_admin(message):
     try:
-        text = message.text
-
         if message.reply_to_message:
             original = message.reply_to_message.text
 
             if "[ADMIN_ALERT]" in original:
                 user_id = int(original.split("\n")[1].replace("User ID: ", ""))
 
-                bot.send_message(user_id, to_html(text), parse_mode="HTML")
-
-                question = pending_questions.get(user_id)
-
-                if question:
-                    with open("knowledge.json", "r+") as f:
-                        data = json.load(f)
-                        data.append({
-                            "id": f"auto_{len(data)+1}",
-                            "keywords": question.lower().split(),
-                            "content": text
-                        })
-                        f.seek(0)
-                        json.dump(data, f, indent=2)
-
-                bot.send_message(ADMIN_ID, "✅ Saved to KB")
-                return
-
-        # Admin ask AI
-        ai = ask_ai([text], text)
-
-        if ai:
-            bot.send_message(ADMIN_ID, to_html(ai), parse_mode="HTML")
-        else:
-            bot.send_message(ADMIN_ID, "AI busy 😅")
+                bot.send_message(user_id, to_html(message.text), parse_mode="HTML")
+                bot.send_message(ADMIN_ID, "✅ Sent to user")
 
     except Exception as e:
         print("[ADMIN ERROR]", e, flush=True)
@@ -182,29 +160,21 @@ def handle_user(message):
 
         print("\n[USER]:", question, flush=True)
 
-        # Identity
-        if is_identity_question(question):
-            bot.send_message(user_id, "Hi! Saya Ahmad 😊")
-            return
+        bot.send_message(user_id, "Sekejap ya, saya check 🤔...")
 
-        bot.send_message(user_id, "Saya tengah fikir 🤔...")
+        # 🔥 SEARCH PDF KB
+        context = search_vertex(question)
 
-        context = search_kb(question)
-
-        # ✅ ADA KB → AI jawab
+        # 🔥 AI ANSWER
         if context:
             ai = ask_ai(context, question)
 
-            if ai:
-                # 🔥 FILTER AI (ELAK MERAPU)
-                if "tak pasti" not in ai.lower():
-                    bot.send_message(user_id, to_html(ai), parse_mode="HTML")
-                    return
-                else:
-                    print("[DEBUG] AI insufficient → ADMIN", flush=True)
+            if ai and "tak cukup info" not in ai.lower():
+                bot.send_message(user_id, to_html(ai), parse_mode="HTML")
+                return
 
-        # ❌ TAK ADA KB / AI FAIL → ADMIN
-        print("[DEBUG] ❌ SEND TO ADMIN", flush=True)
+        # 🔥 FALLBACK → ADMIN
+        print("[DEBUG] SEND TO ADMIN", flush=True)
 
         pending_questions[user_id] = question
 
@@ -215,7 +185,7 @@ def handle_user(message):
 
         bot.send_message(
             user_id,
-            "Soalan ni belum ada dalam sistem saya 🤔 saya pass ke admin ya"
+            "Hmm yang ni saya tak jumpa lagi 😅\nSaya pass dekat admin ya 👍"
         )
 
     except Exception as e:
@@ -224,9 +194,9 @@ def handle_user(message):
 # =========================
 # START
 # =========================
-print("Bot running...", flush=True)
+print("Bot running (Vertex Search mode)...", flush=True)
 
 bot.remove_webhook()
 time.sleep(2)
 
-bot.infinity_polling(skip_pending=True, timeout=20, long_polling_timeout=20)
+bot.infinity_polling(skip_pending=True)
