@@ -9,7 +9,7 @@ from google.cloud import discoveryengine_v1 as discoveryengine
 print("🔥 BOT STARTED", flush=True)
 
 # =========================
-# GOOGLE CREDENTIALS
+# GOOGLE CREDS
 # =========================
 if "GOOGLE_CREDENTIALS" in os.environ:
     creds = json.loads(os.environ["GOOGLE_CREDENTIALS"])
@@ -19,7 +19,6 @@ if "GOOGLE_CREDENTIALS" in os.environ:
 
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
 DATA_STORE_ID = os.environ.get("DATA_STORE_ID")
-LOCATION = "global"
 
 # =========================
 # GEMINI
@@ -35,7 +34,7 @@ client = genai.Client(
 # =========================
 search_client = discoveryengine.SearchServiceClient()
 
-serving_config = f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/dataStores/{DATA_STORE_ID}/servingConfigs/default_config"
+serving_config = f"projects/{PROJECT_ID}/locations/global/collections/default_collection/dataStores/{DATA_STORE_ID}/servingConfigs/default_config"
 
 # =========================
 # TELEGRAM
@@ -47,7 +46,7 @@ ADMIN_ID = 693749347
 pending_questions = {}
 
 # =========================
-# SEARCH FROM PDF
+# SEARCH
 # =========================
 def search_vertex(question):
     try:
@@ -61,58 +60,45 @@ def search_vertex(question):
 
         results = []
 
-        for res in response.results:
-            if res.document and res.document.derived_struct_data:
-                text = res.document.derived_struct_data.get("text", "")
+        for r in response.results:
+            if r.document and r.document.derived_struct_data:
+                text = r.document.derived_struct_data.get("text", "")
                 if text:
                     results.append(text)
 
-        print("[DEBUG] Vertex Results:", len(results), flush=True)
+        print("[DEBUG] Vertex:", len(results), flush=True)
         return results
 
     except Exception as e:
-        print("[VERTEX ERROR]:", e, flush=True)
+        print("[VERTEX ERROR]", e, flush=True)
         return []
 
 # =========================
-# FORMAT OUTPUT
+# FORMAT
 # =========================
 def to_html(text):
     text = text.replace("‘", "'").replace("’", "'")
     text = text.replace("“", '"').replace("”", '"')
-
     text = re.sub(r"### (.*?)\n", r"<b>\1</b>\n", text)
-
-    text = text.replace("&", "&amp;")
-    text = text.replace("<", "&lt;")
-    text = text.replace(">", "&gt;")
-
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return text
 
 # =========================
-# AI FUNCTION
+# AI
 # =========================
 def ask_ai(context, question):
 
     if not context:
         return None
 
-    context_text = "\n\n".join(context)
-
     prompt = f"""
 Jawab hanya berdasarkan maklumat ini sahaja.
 
-Gaya santai, macam sembang biasa.
-
-DILARANG:
-- guna pengetahuan luar
-- tambah fakta sendiri
-
-Jika maklumat tak cukup, jawab:
+Jika tak cukup, jawab:
 "tak cukup info"
 
 -----------------------
-{context_text}
+{chr(10).join(context)}
 -----------------------
 
 Soalan:
@@ -120,78 +106,70 @@ Soalan:
 """
 
     try:
-        response = client.models.generate_content(
+        r = client.models.generate_content(
             model="gemini-2.5-pro",
             contents=prompt
         )
 
-        if hasattr(response, "text") and response.text:
-            return response.text.strip()
+        if hasattr(r, "text"):
+            return r.text.strip()
 
     except Exception as e:
-        print("[AI ERROR]:", e, flush=True)
+        print("[AI ERROR]", e, flush=True)
 
     return None
 
 # =========================
-# ADMIN HANDLER
-# =========================
-@bot.message_handler(func=lambda m: m.chat.id == ADMIN_ID)
-def handle_admin(message):
-    try:
-        if message.reply_to_message:
-            original = message.reply_to_message.text
-
-            if "[ADMIN_ALERT]" in original:
-                user_id = int(original.split("\n")[1].replace("User ID: ", ""))
-
-                bot.send_message(user_id, to_html(message.text), parse_mode="HTML")
-                bot.send_message(ADMIN_ID, "✅ Sent to user")
-
-    except Exception as e:
-        print("[ADMIN ERROR]", e, flush=True)
-
-# =========================
-# USER HANDLER
+# SINGLE HANDLER (FIX)
 # =========================
 @bot.message_handler(func=lambda m: True)
-def handle_user(message):
+def handle_all(message):
     try:
         user_id = message.chat.id
-        question = message.text
+        text = message.text
 
-        print("\n[USER]:", question, flush=True)
+        print("\n📩 MESSAGE:", text, flush=True)
 
+        # ================= ADMIN =================
+        if user_id == ADMIN_ID:
+
+            if message.reply_to_message:
+                original = message.reply_to_message.text
+
+                if "[ADMIN_ALERT]" in original:
+                    target = int(original.split("\n")[1].replace("User ID: ", ""))
+
+                    bot.send_message(target, to_html(text), parse_mode="HTML")
+                    bot.send_message(ADMIN_ID, "✅ Sent to user")
+                    return
+
+        # ================= USER =================
         bot.send_message(user_id, "Sekejap ya, saya check 🤔...")
 
-        # 🔥 SEARCH PDF
-        context = search_vertex(question)
+        context = search_vertex(text)
 
-        # 🔥 AI ANSWER
         if context:
-            ai = ask_ai(context, question)
+            ai = ask_ai(context, text)
 
             if ai and "tak cukup info" not in ai.lower():
                 bot.send_message(user_id, to_html(ai), parse_mode="HTML")
                 return
 
-        # 🔥 FALLBACK ADMIN
-        print("[DEBUG] SEND TO ADMIN", flush=True)
-
-        pending_questions[user_id] = question
+        # ================= FALLBACK =================
+        pending_questions[user_id] = text
 
         bot.send_message(
             ADMIN_ID,
-            f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {question}"
+            f"[ADMIN_ALERT]\nUser ID: {user_id}\nSoalan: {text}"
         )
 
         bot.send_message(
             user_id,
-            "Hmm saya tak jumpa info tu lagi 😅\nSaya pass dekat admin ya 👍"
+            "Hmm yang ni saya tak jumpa lagi 😅\nSaya pass dekat admin ya 👍"
         )
 
     except Exception as e:
-        print("[USER ERROR]", e, flush=True)
+        print("[ERROR]", e, flush=True)
 
 # =========================
 # START
@@ -199,6 +177,6 @@ def handle_user(message):
 bot.remove_webhook()
 time.sleep(2)
 
-print("🚀 Bot running (Vertex + AI)...", flush=True)
+print("🚀 Bot running FINAL...", flush=True)
 
 bot.infinity_polling(skip_pending=True)
