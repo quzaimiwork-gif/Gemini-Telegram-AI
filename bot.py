@@ -34,7 +34,7 @@ gemini_client = genai.Client(
 )
 
 search_client = discoveryengine.SearchServiceClient()
-SERVING_CONFIG = f"{ENGINE_ID}/servingConfigs/default_config"
+SERVING_CONFIG = f"projects/{PROJECT_ID}/locations/global/collections/default_collection/engines/{ENGINE_ID}/servingConfigs/default_search"
 
 storage_client = storage.Client()
 
