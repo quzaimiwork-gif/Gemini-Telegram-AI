@@ -80,7 +80,7 @@ Message: "{text}"
 """
     try:
         r = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             contents=prompt
         )
         result = r.text.strip().upper()
@@ -113,7 +113,7 @@ Reply naturally:
 """
     try:
         r = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             contents=prompt
         )
         return r.text.strip()
