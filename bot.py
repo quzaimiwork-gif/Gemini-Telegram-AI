@@ -20,9 +20,7 @@ if "GOOGLE_CREDENTIALS" in os.environ:
 
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
 ENGINE_ID  = os.environ.get("ENGINE_ID")
-
-# ⚠️  Set this to your Cloud Storage bucket name (the one with your PDFs)
-KB_BUCKET  = os.environ.get("KB_BUCKET_NAME", "YOUR_BUCKET_NAME_HERE")
+KB_BUCKET  = os.environ.get("KB_BUCKET_NAME", "telegram_kb")
 
 # =========================
 # GOOGLE CLIENTS
@@ -34,7 +32,10 @@ gemini_client = genai.Client(
 )
 
 search_client = discoveryengine.SearchServiceClient()
-SERVING_CONFIG = f"projects/{PROJECT_ID}/locations/global/collections/default_collection/engines/{ENGINE_ID}/servingConfigs/default_search"
+SERVING_CONFIG = (
+    f"projects/{PROJECT_ID}/locations/global/collections/default_collection"
+    f"/engines/{ENGINE_ID}/servingConfigs/default_search"
+)
 
 storage_client = storage.Client()
 
@@ -46,14 +47,13 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 ADMIN_ID = 693749347
 
-# pending_questions maps:  alert_message_id → { user_id, question }
-# This lets us match admin replies to the right user
+# pending_questions maps: alert_message_id → { user_id, question }
 pending_questions = {}
 
 
 # =========================
 # SMALL TALK DETECTION
-# Gemini decides if the message is casual chat (not a KB question)
+# Gemini classifies if message is casual chat or a real question
 # =========================
 def is_small_talk(text):
     prompt = f"""
@@ -61,7 +61,7 @@ You are a classifier for a Malay/English chatbot. Decide if this message is SMAL
 
 SMALL TALK includes:
 - Greetings: hi, hello, hai, assalamualaikum, selamat pagi, apa khabar
-- Asking who/what the bot is: "awak ni siapa", "kau ni apa", "who are you", "siapa kau", "bot ke", "kau ke"
+- Asking who/what the bot is: "awak ni siapa", "kau ni apa", "who are you", "siapa kau", "bot ke"
 - Thanks: terima kasih, thanks, tq, ok thanks
 - Goodbye: bye, selamat tinggal, ok, noted
 - Feelings/reactions: best, ok je, haha, wah, bagus
@@ -88,7 +88,7 @@ Message: "{text}"
         return "SMALLTALK" in result
     except Exception as e:
         print("[CLASSIFIER ERROR]", e, flush=True)
-        return False  # if unsure, treat as real question
+        return False
 
 
 # =========================
@@ -174,7 +174,7 @@ def ask_ai(context, question):
     context_text = "\n\n".join(context)
 
     prompt = f"""
-You are Ahmad, a helpful AI assistant.
+You are Ahmad, a helpful AI assistant for MYNIC — Malaysia's domain registry.
 
 RULES:
 - Answer ONLY using the info below
@@ -205,19 +205,15 @@ Question: {question}
 
 # =========================
 # AUTO-LEARN: SAVE Q&A TO BUCKET
-# Vertex will re-index this file automatically
 # =========================
 def save_to_kb(question, answer):
     try:
         bucket = storage_client.bucket(KB_BUCKET)
-        # Safe filename from question
         safe_name = re.sub(r"[^a-zA-Z0-9]", "_", question[:60]).strip("_")
         filename  = f"learned_qa/{safe_name}_{int(time.time())}.txt"
-
-        content = f"Soalan: {question}\n\nJawapan: {answer}"
+        content   = f"Soalan: {question}\n\nJawapan: {answer}"
         blob = bucket.blob(filename)
         blob.upload_from_string(content, content_type="text/plain")
-
         print(f"[KB SAVED] {filename}", flush=True)
         return True
     except Exception as e:
@@ -229,12 +225,9 @@ def save_to_kb(question, answer):
 # HTML FORMATTER
 # =========================
 def to_html(text):
-    # Fix smart quotes
     text = text.replace("\u2018", "'").replace("\u2019", "'")
     text = text.replace("\u201c", '"').replace("\u201d", '"')
-    # Convert ### headings to bold
     text = re.sub(r"### (.*?)\n", r"<b>\1</b>\n", text)
-    # Escape HTML (AFTER bold replacement)
     text = text.replace("&", "&amp;")
     text = text.replace("<b>", "BOLD_OPEN").replace("</b>", "BOLD_CLOSE")
     text = text.replace("<", "&lt;").replace(">", "&gt;")
@@ -248,14 +241,13 @@ def to_html(text):
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
     try:
-        user_id   = message.chat.id
-        text      = message.text or ""
-        text      = text.strip()
+        user_id = message.chat.id
+        text    = (message.text or "").strip()
 
         print(f"\n📩 FROM {user_id}: {text}", flush=True)
 
         # ─────────────────────────────
-        # ADMIN: handle replies to alert messages
+        # ADMIN: reply to alert message → send to user
         # ─────────────────────────────
         if user_id == ADMIN_ID and message.reply_to_message:
             replied_msg_id = message.reply_to_message.message_id
@@ -266,28 +258,22 @@ def handle_all(message):
                 question = entry["question"]
                 answer   = text
 
-                # Send answer to user
-                bot.send_message(
-                    target,
-                    to_html(answer),
-                    parse_mode="HTML"
-                )
+                bot.send_message(target, to_html(answer), parse_mode="HTML")
 
-                # Save to KB for future
-                saved = save_to_kb(question, answer)
-                status = "✅ Saved to KB" if saved else "⚠️ Saved to KB failed (check bucket name)"
+                saved  = save_to_kb(question, answer)
+                status = "✅ Saved to KB" if saved else "⚠️ KB save failed (check bucket name)"
                 bot.send_message(ADMIN_ID, f"✅ Answer sent to user.\n{status}")
                 return
 
         # ─────────────────────────────
-        # ADMIN: plain message (not a reply) — skip normal flow
+        # ADMIN: plain message reminder
         # ─────────────────────────────
         if user_id == ADMIN_ID and not message.reply_to_message:
             bot.send_message(ADMIN_ID, "💡 To answer a user, use Telegram's Reply feature on the alert message.")
             return
 
         # ─────────────────────────────
-        # USER: small talk check
+        # USER: small talk
         # ─────────────────────────────
         if is_small_talk(text):
             reply = reply_small_talk(text)
@@ -295,7 +281,7 @@ def handle_all(message):
             return
 
         # ─────────────────────────────
-        # USER: real question → search KB
+        # USER: real question → KB search
         # ─────────────────────────────
         bot.send_message(user_id, "Sekejap ya, saya check 🤔...")
 
@@ -320,7 +306,6 @@ def handle_all(message):
             parse_mode="HTML"
         )
 
-        # Store by alert message ID so we can match admin's reply
         pending_questions[alert.message_id] = {
             "user_id": user_id,
             "question": text
