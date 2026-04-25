@@ -226,6 +226,7 @@ RULES:
 - When the answer has multiple sections or points, separate each COMPLETE section with exactly this on its own line: ---
 - Each section must be complete before the --- separator
 - Short answers (1-2 sentences) do not need separators
+- For URLs in the source content: ONLY share links that are action-based (registration portals, login pages, forms, official service pages). Do NOT share links that lead to articles, blog posts, "read more", or "learn more" pages
 - If the info is not enough to answer, reply exactly: INSUFFICIENT
 - Never add facts from outside the provided info
 
