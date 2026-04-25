@@ -46,33 +46,29 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(BOT_TOKEN)
 
 ADMIN_ID = 693749347
-
-# pending_questions maps: alert_message_id → { user_id, question }
 pending_questions = {}
 
 
 # =========================
 # SMALL TALK DETECTION
-# Gemini classifies if message is casual chat or a real question
 # =========================
 def is_small_talk(text):
     prompt = f"""
 You are a classifier for a Malay/English chatbot. Decide if this message is SMALL TALK or a REAL QUESTION.
 
 SMALL TALK includes:
-- Greetings: hi, hello, hai, assalamualaikum, selamat pagi, apa khabar
+- Pure greetings with no question attached: "hi", "hello", "hai", "hey", "assalamualaikum", "selamat pagi", "apa khabar"
+- "hai?" alone is still a greeting/small talk
 - Asking who/what the bot is: "awak ni siapa", "kau ni apa", "who are you", "siapa kau", "bot ke"
 - Thanks: terima kasih, thanks, tq, ok thanks
-- Goodbye: bye, selamat tinggal, ok, noted
-- Feelings/reactions: best, ok je, haha, wah, bagus
-- Compliments: pandai, hebat, good
-- Identity questions about the bot itself
+- Goodbye: bye, selamat tinggal, ok bye
+- Reactions: best, ok je, haha, wah, bagus, pandai, hebat
 
 REAL QUESTION includes:
-- Asking about specific services, products, prices, procedures
-- Questions about MYNIC, domain, registration, digital
+- Questions about specific services, products, prices, procedures
+- Questions about MYNIC, domain, registration, digital business
 - How to do something specific
-- What is [a specific product/service/topic]
+- "Hai, apa tu MYNIC?" — greeting combined with a real question = QUESTION
 
 Reply with ONE word only: SMALLTALK or QUESTION
 
@@ -92,8 +88,38 @@ Message: "{text}"
 
 
 # =========================
+# THINKING MESSAGE
+# Ahmad generates natural "looking it up" message
+# =========================
+def get_thinking_message(question):
+    prompt = f"""
+You are Ahmad, a friendly Malay/English AI assistant.
+The user just asked you a question and you need to tell them you are looking it up.
+
+Rules:
+- Write ONE short sentence only (max 8 words)
+- Sound natural and conversational, not robotic
+- Mirror their language (Malay → Malay, English → English, mix → mix)
+- Do NOT include any answer yet
+- Be casual, vary your phrasing each time
+
+User question: "{question}"
+
+Reply with just the short thinking message:
+"""
+    try:
+        r = gemini_client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=prompt
+        )
+        return r.text.strip()
+    except Exception as e:
+        print("[THINKING ERROR]", e, flush=True)
+        return "Jap, saya tengok dulu..."
+
+
+# =========================
 # SMALL TALK REPLY
-# Ahmad responds naturally, mirrors user's language
 # =========================
 def reply_small_talk(text):
     prompt = f"""
@@ -102,7 +128,9 @@ Your personality: warm, casual, helpful, a little witty, never robotic.
 
 Rules:
 - Mirror the user's language (Malay → Malay, English → English, mix → mix)
-- Keep it short (1–3 sentences max)
+- Keep it short (1-3 sentences max)
+- If the user greeted with "hai", "hi", "hello" etc, you CAN reply with a greeting back — it is natural
+- If the user did NOT greet, do NOT open with a greeting word
 - If asked who you are: say you are Ahmad, a virtual assistant for MYNIC, here to help with domain registration, digital services, and related questions
 - If asked what you can do: say you can answer questions about MYNIC services, domain registration (.my domains), and digital business topics
 - Never say you are ChatGPT or any other AI brand
@@ -136,8 +164,8 @@ def search_vertex(question):
                     return_snippet=True
                 ),
                 extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
-                    max_extractive_answer_count=3,
-                    max_extractive_segment_count=5
+                    max_extractive_answer_count=5,
+                    max_extractive_segment_count=10
                 )
             )
         )
@@ -180,6 +208,12 @@ RULES:
 - Answer ONLY using the info below
 - Mirror the user's language (Malay → Malay, English → English, mix → mix)
 - Be friendly and casual, not robotic
+- Do NOT open with "Hai", "Hello" or any greeting — just answer directly
+- Give a COMPLETE answer, do not cut off halfway
+- Use **double asterisks** around important terms or key points for bold e.g. **MYNIC**
+- When the answer has multiple sections or points, separate each COMPLETE section with exactly this on its own line: ---
+- Each section must be complete before the --- separator
+- Short answers (1-2 sentences) do not need separators
 - If the info is not enough to answer, reply exactly: INSUFFICIENT
 - Never add facts from outside the provided info
 
@@ -193,7 +227,8 @@ Question: {question}
     try:
         r = gemini_client.models.generate_content(
             model="gemini-2.5-pro",
-            contents=prompt
+            contents=prompt,
+            config={"max_output_tokens": 2048}
         )
         if hasattr(r, "text") and r.text:
             return r.text.strip()
@@ -223,16 +258,44 @@ def save_to_kb(question, answer):
 
 # =========================
 # HTML FORMATTER
+# Converts **bold** markdown to Telegram HTML <b>bold</b>
 # =========================
 def to_html(text):
+    # Fix smart quotes
     text = text.replace("\u2018", "'").replace("\u2019", "'")
     text = text.replace("\u201c", '"').replace("\u201d", '"')
+    # Convert **bold** to <b>bold</b>
+    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+    # Convert ### headings to bold
     text = re.sub(r"### (.*?)\n", r"<b>\1</b>\n", text)
+    # Escape HTML special chars but preserve our <b> tags
     text = text.replace("&", "&amp;")
     text = text.replace("<b>", "BOLD_OPEN").replace("</b>", "BOLD_CLOSE")
     text = text.replace("<", "&lt;").replace(">", "&gt;")
     text = text.replace("BOLD_OPEN", "<b>").replace("BOLD_CLOSE", "</b>")
     return text
+
+
+# =========================
+# SPLIT LONG MESSAGES INTO BUBBLES
+# Gemini uses --- to mark end of each complete section
+# =========================
+def send_in_bubbles(chat_id, text):
+    # Split by --- separator (each section is a complete point)
+    sections = [s.strip() for s in re.split(r"\n---\n|\n---$|^---\n", text) if s.strip()]
+
+    # If no --- found or only one section, send as single bubble
+    if len(sections) <= 1:
+        formatted = to_html(text.strip())
+        bot.send_message(chat_id, formatted, parse_mode="HTML")
+        return
+
+    # Send each complete section as its own bubble
+    for section in sections:
+        if section.strip():
+            formatted = to_html(section.strip())
+            bot.send_message(chat_id, formatted, parse_mode="HTML")
+            time.sleep(0.4)  # small delay so bubbles arrive in order
 
 
 # =========================
@@ -283,13 +346,14 @@ def handle_all(message):
         # ─────────────────────────────
         # USER: real question → KB search
         # ─────────────────────────────
-        bot.send_message(user_id, "Sekejap ya, saya check 🤔...")
+        thinking = get_thinking_message(text)
+        bot.send_message(user_id, thinking)
 
         context = search_vertex(text)
         ai      = ask_ai(context, text) if context else None
 
         if ai and "INSUFFICIENT" not in ai.upper():
-            bot.send_message(user_id, to_html(ai), parse_mode="HTML")
+            send_in_bubbles(user_id, ai)
             return
 
         # ─────────────────────────────
@@ -313,7 +377,7 @@ def handle_all(message):
 
         bot.send_message(
             user_id,
-            "Hmm, yang ni saya tak jumpa lagi 😅\nSaya dah forward ke admin — nanti ada jawapan, saya bagitahu ya! 👍"
+            "Yang ni saya tak jumpa dalam rekod saya 😅\nSaya dah forwardkan ke admin — nanti ada jawapan saya bagitahu ya! 👍"
         )
 
     except Exception as e:
