@@ -166,7 +166,7 @@ def search_vertex(question):
                 ),
                 extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
                     max_extractive_answer_count=5,
-                    max_extractive_segment_count=20
+                    max_extractive_segment_count=10
                 )
             )
         )
