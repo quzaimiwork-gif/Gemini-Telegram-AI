@@ -103,19 +103,20 @@ Message: "{text}"
 # =========================
 def get_thinking_message(question):
     prompt = f"""
-You are Ahmad, a friendly Malay/English AI assistant.
-The user just asked you a question and you need to tell them you are looking it up.
+You are Ahmad, a friendly Malay/English assistant (not a robot).
+The user just asked you something. Reply with ONE short casual sentence that shows you're engaged and about to help.
 
 Rules:
-- Write ONE short sentence only (max 8 words)
-- Sound natural and conversational, not robotic
+- Max 8 words
+- Sound like a real person, not an AI assistant
 - Mirror their language (Malay → Malay, English → English, mix → mix)
-- Do NOT include any answer yet
-- Be casual, vary your phrasing each time
+- Use phrases like: "Menarik soalan tu!", "Saya boleh cuba bantu!", "Oh, bagus soalan!", "Let me check that for you!", "Okay, biar saya tengok..."
+- Do NOT say "saya check", "saya semak", "looking it up" — too robotic
+- Vary the phrase, don't repeat
 
 User question: "{question}"
 
-Reply with just the short thinking message:
+Reply with just the short engaging message:
 """
     try:
         r = gemini_client.models.generate_content(
@@ -125,7 +126,7 @@ Reply with just the short thinking message:
         return r.text.strip()
     except Exception as e:
         print("[THINKING ERROR]", e, flush=True)
-        return "Jap, saya tengok dulu..."
+        return "Menarik soalan tu! 😊"
 
 
 # =========================
@@ -275,10 +276,13 @@ def to_html(text):
     # Fix smart quotes
     text = text.replace("\u2018", "'").replace("\u2019", "'")
     text = text.replace("\u201c", '"').replace("\u201d", '"')
-    # Convert **bold** to <b>bold</b>
+    # Convert **bold** to <b>bold</b> BEFORE bullet fix
     text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
     # Convert ### headings to bold
     text = re.sub(r"### (.*?)\n", r"<b>\1</b>\n", text)
+    # Convert markdown bullet points (* item) to dash (- item)
+    text = re.sub(r"^\* ", "• ", text, flags=re.MULTILINE)
+    text = re.sub(r"^- ", "• ", text, flags=re.MULTILINE)
     # Escape HTML special chars but preserve our <b> tags
     text = text.replace("&", "&amp;")
     text = text.replace("<b>", "BOLD_OPEN").replace("</b>", "BOLD_CLOSE")
