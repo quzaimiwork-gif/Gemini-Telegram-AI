@@ -158,14 +158,15 @@ def search_vertex(question):
         request = discoveryengine.SearchRequest(
             serving_config=SERVING_CONFIG,
             query=question,
-            page_size=5,
+            page_size=10,
             content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
                 snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(
-                    return_snippet=True
+                    return_snippet=True,
+                    max_snippet_count=5
                 ),
                 extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
                     max_extractive_answer_count=5,
-                    max_extractive_segment_count=10
+                    max_extractive_segment_count=20
                 )
             )
         )
@@ -209,7 +210,7 @@ RULES:
 - Mirror the user's language (Malay → Malay, English → English, mix → mix)
 - Be friendly and casual, not robotic
 - Do NOT open with "Hai", "Hello" or any greeting — just answer directly
-- Give a COMPLETE answer, do not cut off halfway
+- Give a COMPLETE answer based on what the question asks — if the question asks for an overview of a topic, cover all relevant parts; if it asks about one specific thing, focus on that
 - Use **double asterisks** around important terms or key points for bold e.g. **MYNIC**
 - When the answer has multiple sections or points, separate each COMPLETE section with exactly this on its own line: ---
 - Each section must be complete before the --- separator
