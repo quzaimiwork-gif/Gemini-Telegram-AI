@@ -3,6 +3,7 @@ import os
 import json
 import time
 import re
+import threading
 from google import genai
 from google.cloud import discoveryengine_v1 as discoveryengine
 from google.cloud import storage
@@ -47,6 +48,15 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 ADMIN_ID = 693749347
 pending_questions = {}
+
+# =========================
+# MESSAGE BATCHING
+# Collects multiple messages from same user,
+# waits 10s of silence, then processes as one
+# =========================
+BATCH_WAIT = 10  # seconds to wait after last message
+user_batches = {}       # user_id → list of messages
+user_timers = {}        # user_id → threading.Timer
 
 
 # =========================
@@ -308,41 +318,20 @@ def send_in_bubbles(chat_id, text):
 
 
 # =========================
-# MAIN MESSAGE HANDLER
+# PROCESS COMPILED MESSAGE
+# Called after 10s silence — processes all batched messages as one
 # =========================
-@bot.message_handler(func=lambda m: True)
-def handle_all(message):
+def process_batch(user_id):
     try:
-        user_id = message.chat.id
-        text    = (message.text or "").strip()
+        messages = user_batches.pop(user_id, [])
+        user_timers.pop(user_id, None)
 
-        print(f"\n📩 FROM {user_id}: {text}", flush=True)
-
-        # ─────────────────────────────
-        # ADMIN: reply to alert message → send to user
-        # ─────────────────────────────
-        if user_id == ADMIN_ID and message.reply_to_message:
-            replied_msg_id = message.reply_to_message.message_id
-
-            if replied_msg_id in pending_questions:
-                entry    = pending_questions.pop(replied_msg_id)
-                target   = entry["user_id"]
-                question = entry["question"]
-                answer   = text
-
-                bot.send_message(target, to_html(answer), parse_mode="HTML")
-
-                saved  = save_to_kb(question, answer)
-                status = "✅ Saved to KB" if saved else "⚠️ KB save failed (check bucket name)"
-                bot.send_message(ADMIN_ID, f"✅ Answer sent to user.\n{status}")
-                return
-
-        # ─────────────────────────────
-        # ADMIN: plain message reminder
-        # ─────────────────────────────
-        if user_id == ADMIN_ID and not message.reply_to_message:
-            bot.send_message(ADMIN_ID, "💡 To answer a user, use Telegram's Reply feature on the alert message.")
+        if not messages:
             return
+
+        # Compile all messages into one
+        text = " ".join(messages)
+        print(f"\n📦 BATCH FROM {user_id}: {text}", flush=True)
 
         # ─────────────────────────────
         # USER: small talk
@@ -388,6 +377,197 @@ def handle_all(message):
             user_id,
             "Yang ni saya tak jumpa dalam rekod saya 😅\nSaya dah forwardkan ke admin — nanti ada jawapan saya bagitahu ya! 👍"
         )
+
+    except Exception as e:
+        print("[BATCH ERROR]", e, flush=True)
+
+
+# =========================
+# VOICE NOTE HANDLER
+# Download audio → send to Gemini → transcribe → add to batch
+# =========================
+def handle_voice(message):
+    user_id = message.chat.id
+    try:
+        print(f"\n🎤 VOICE FROM {user_id}", flush=True)
+
+        # Download voice file from Telegram
+        file_info = bot.get_file(message.voice.file_id)
+        downloaded = bot.download_file(file_info.file_path)
+
+        # Save temporarily
+        audio_path = f"/tmp/voice_{user_id}_{int(time.time())}.ogg"
+        with open(audio_path, "wb") as f:
+            f.write(downloaded)
+
+        # Upload to Gemini Files API and transcribe
+        uploaded = gemini_client.files.upload(
+            file=audio_path,
+            config={"mime_type": "audio/ogg"}
+        )
+
+        transcribe_prompt = """Transcribe this audio message exactly as spoken.
+If it is in Malay, transcribe in Malay.
+If it is in English, transcribe in English.
+Return ONLY the transcribed text, nothing else."""
+
+        r = gemini_client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=[uploaded, transcribe_prompt]
+        )
+
+        transcribed = r.text.strip()
+        print(f"[VOICE] Transcribed: {transcribed}", flush=True)
+
+        # Clean up temp file
+        os.remove(audio_path)
+
+        # Add transcribed text to batch (same flow as text messages)
+        if user_id in user_timers:
+            user_timers[user_id].cancel()
+
+        if user_id not in user_batches:
+            user_batches[user_id] = []
+        user_batches[user_id].append(transcribed)
+
+        timer = threading.Timer(BATCH_WAIT, process_batch, args=[user_id])
+        user_timers[user_id] = timer
+        timer.start()
+
+        print(f"[BATCH] Voice queued for {user_id}", flush=True)
+
+    except Exception as e:
+        print("[VOICE ERROR]", e, flush=True)
+        bot.send_message(user_id, "Alamak, ada masalah nak proses voice note tu. Cuba hantar dalam bentuk teks ya! 😅")
+
+
+# =========================
+# IMAGE HANDLER
+# Download image → Gemini vision understands doc/screenshot → answer
+# =========================
+def handle_image(message):
+    user_id = message.chat.id
+    try:
+        print(f"\n🖼️ IMAGE FROM {user_id}", flush=True)
+
+        caption = (message.caption or "").strip()
+
+        # Download highest resolution photo
+        photo = message.photo[-1]
+        file_info = bot.get_file(photo.file_id)
+        downloaded = bot.download_file(file_info.file_path)
+
+        image_path = f"/tmp/img_{user_id}_{int(time.time())}.jpg"
+        with open(image_path, "wb") as f:
+            f.write(downloaded)
+
+        # Upload to Gemini
+        uploaded = gemini_client.files.upload(
+            file=image_path,
+            config={"mime_type": "image/jpeg"}
+        )
+
+        # Build prompt — always treat as document/screenshot
+        if caption:
+            image_prompt = f"""The user sent a document or screenshot with this question: "{caption}"
+
+Read the content in the image carefully and answer their question based on what you see.
+If you cannot read the image clearly, say so.
+Reply in the same language as the caption."""
+        else:
+            image_prompt = """The user sent a document or screenshot without any question.
+Read and summarise what you see in the image.
+If it contains text, extract the key information.
+Ask the user what they need help with regarding this document.
+Reply in Malay by default."""
+
+        r = gemini_client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=[uploaded, image_prompt]
+        )
+
+        reply = r.text.strip()
+        print(f"[IMAGE] Reply: {reply[:100]}...", flush=True)
+
+        os.remove(image_path)
+        send_in_bubbles(user_id, reply)
+
+    except Exception as e:
+        print("[IMAGE ERROR]", e, flush=True)
+        bot.send_message(user_id, "Alamak, ada masalah nak proses gambar tu. Cuba hantar dalam bentuk teks ya! 😅")
+
+
+# =========================
+# MAIN MESSAGE HANDLER
+# =========================
+@bot.message_handler(func=lambda m: True)
+def handle_all(message):
+    try:
+        user_id = message.chat.id
+        text    = (message.text or "").strip()
+
+        print(f"\n📩 FROM {user_id}: {text}", flush=True)
+
+        # ─────────────────────────────
+        # ADMIN: reply to alert message → send to user
+        # ─────────────────────────────
+        if user_id == ADMIN_ID and message.reply_to_message:
+            replied_msg_id = message.reply_to_message.message_id
+
+            if replied_msg_id in pending_questions:
+                entry    = pending_questions.pop(replied_msg_id)
+                target   = entry["user_id"]
+                question = entry["question"]
+                answer   = text
+
+                bot.send_message(target, to_html(answer), parse_mode="HTML")
+
+                saved  = save_to_kb(question, answer)
+                status = "✅ Saved to KB" if saved else "⚠️ KB save failed (check bucket name)"
+                bot.send_message(ADMIN_ID, f"✅ Answer sent to user.\n{status}")
+                return
+
+        # ─────────────────────────────
+        # ADMIN: plain message reminder
+        # ─────────────────────────────
+        if user_id == ADMIN_ID and not message.reply_to_message:
+            bot.send_message(ADMIN_ID, "💡 To answer a user, use Telegram's Reply feature on the alert message.")
+            return
+
+        # ─────────────────────────────
+        # VOICE NOTE
+        # ─────────────────────────────
+        if message.voice:
+            handle_voice(message)
+            return
+
+        # ─────────────────────────────
+        # IMAGE
+        # ─────────────────────────────
+        if message.photo:
+            handle_image(message)
+            return
+
+        # ─────────────────────────────
+        # USER: batch text messages
+        # Add to batch, reset 10s timer
+        # ─────────────────────────────
+
+        # Cancel existing timer if any
+        if user_id in user_timers:
+            user_timers[user_id].cancel()
+
+        # Add message to batch
+        if user_id not in user_batches:
+            user_batches[user_id] = []
+        user_batches[user_id].append(text)
+
+        # Start new 10s timer
+        timer = threading.Timer(BATCH_WAIT, process_batch, args=[user_id])
+        user_timers[user_id] = timer
+        timer.start()
+
+        print(f"[BATCH] Queued for {user_id}, {len(user_batches[user_id])} msg(s) so far", flush=True)
 
     except Exception as e:
         print("[ERROR]", e, flush=True)
