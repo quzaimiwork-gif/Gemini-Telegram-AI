@@ -384,7 +384,7 @@ def process_batch(user_id):
 
 # =========================
 # VOICE NOTE HANDLER
-# Download audio → send to Gemini → transcribe → add to batch
+# Download audio → send to Gemini as base64 → transcribe → add to batch
 # =========================
 def handle_voice(message):
     user_id = message.chat.id
@@ -395,32 +395,25 @@ def handle_voice(message):
         file_info = bot.get_file(message.voice.file_id)
         downloaded = bot.download_file(file_info.file_path)
 
-        # Save temporarily
-        audio_path = f"/tmp/voice_{user_id}_{int(time.time())}.ogg"
-        with open(audio_path, "wb") as f:
-            f.write(downloaded)
+        # Convert to base64
+        import base64
+        audio_b64 = base64.b64encode(downloaded).decode("utf-8")
 
-        # Upload to Gemini Files API and transcribe
-        uploaded = gemini_client.files.upload(
-            file=audio_path,
-            config={"mime_type": "audio/ogg"}
-        )
-
-        transcribe_prompt = """Transcribe this audio message exactly as spoken.
-If it is in Malay, transcribe in Malay.
-If it is in English, transcribe in English.
-Return ONLY the transcribed text, nothing else."""
-
-        r = gemini_client.models.generate_content(
+        # Send inline to Gemini (Vertex AI compatible)
+        from google.genai import types as genai_types
+        response = gemini_client.models.generate_content(
             model="gemini-2.5-pro",
-            contents=[uploaded, transcribe_prompt]
+            contents=[
+                genai_types.Part.from_bytes(
+                    data=base64.b64decode(audio_b64),
+                    mime_type="audio/ogg"
+                ),
+                "Transcribe this audio exactly as spoken. Return ONLY the transcribed text, nothing else."
+            ]
         )
 
-        transcribed = r.text.strip()
+        transcribed = response.text.strip()
         print(f"[VOICE] Transcribed: {transcribed}", flush=True)
-
-        # Clean up temp file
-        os.remove(audio_path)
 
         # Add transcribed text to batch (same flow as text messages)
         if user_id in user_timers:
@@ -457,20 +450,9 @@ def handle_image(message):
         file_info = bot.get_file(photo.file_id)
         downloaded = bot.download_file(file_info.file_path)
 
-        image_path = f"/tmp/img_{user_id}_{int(time.time())}.jpg"
-        with open(image_path, "wb") as f:
-            f.write(downloaded)
-
-        # Upload to Gemini
-        uploaded = gemini_client.files.upload(
-            file=image_path,
-            config={"mime_type": "image/jpeg"}
-        )
-
         # Build prompt — always treat as document/screenshot
         if caption:
             image_prompt = f"""The user sent a document or screenshot with this question: "{caption}"
-
 Read the content in the image carefully and answer their question based on what you see.
 If you cannot read the image clearly, say so.
 Reply in the same language as the caption."""
@@ -481,15 +463,21 @@ If it contains text, extract the key information.
 Ask the user what they need help with regarding this document.
 Reply in Malay by default."""
 
-        r = gemini_client.models.generate_content(
+        # Send inline as base64 (Vertex AI compatible)
+        from google.genai import types as genai_types
+        response = gemini_client.models.generate_content(
             model="gemini-2.5-pro",
-            contents=[uploaded, image_prompt]
+            contents=[
+                genai_types.Part.from_bytes(
+                    data=downloaded,
+                    mime_type="image/jpeg"
+                ),
+                image_prompt
+            ]
         )
 
-        reply = r.text.strip()
+        reply = response.text.strip()
         print(f"[IMAGE] Reply: {reply[:100]}...", flush=True)
-
-        os.remove(image_path)
         send_in_bubbles(user_id, reply)
 
     except Exception as e:
