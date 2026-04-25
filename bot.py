@@ -535,20 +535,6 @@ def handle_all(message):
             return
 
         # ─────────────────────────────
-        # VOICE NOTE
-        # ─────────────────────────────
-        if message.voice:
-            handle_voice(message)
-            return
-
-        # ─────────────────────────────
-        # IMAGE
-        # ─────────────────────────────
-        if message.photo:
-            handle_image(message)
-            return
-
-        # ─────────────────────────────
         # USER: batch text messages
         # Add to batch, reset 10s timer
         # ─────────────────────────────
@@ -578,6 +564,17 @@ def handle_all(message):
 # =========================
 bot.remove_webhook()
 time.sleep(2)
+
+# Explicit handlers for voice and photo (must be before infinity_polling)
+@bot.message_handler(content_types=["voice"])
+def route_voice(message):
+    if message.chat.id != ADMIN_ID:
+        handle_voice(message)
+
+@bot.message_handler(content_types=["photo"])
+def route_photo(message):
+    if message.chat.id != ADMIN_ID:
+        handle_image(message)
 
 print("🚀 Ahmad is running...", flush=True)
 bot.infinity_polling(skip_pending=True)
