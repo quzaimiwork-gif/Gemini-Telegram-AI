@@ -228,7 +228,7 @@ Question: {question}
         r = gemini_client.models.generate_content(
             model="gemini-2.5-pro",
             contents=prompt,
-            config={"max_output_tokens": 2048}
+            config={"max_output_tokens": 8192}
         )
         if hasattr(r, "text") and r.text:
             return r.text.strip()
@@ -287,7 +287,15 @@ def send_in_bubbles(chat_id, text):
     # If no --- found or only one section, send as single bubble
     if len(sections) <= 1:
         formatted = to_html(text.strip())
-        bot.send_message(chat_id, formatted, parse_mode="HTML")
+        # Telegram max is 4096 chars per message — split only if exceeded
+        if len(formatted) <= 4096:
+            bot.send_message(chat_id, formatted, parse_mode="HTML")
+        else:
+            # Very long single section — split at sentence level
+            chunks = [formatted[i:i+4000] for i in range(0, len(formatted), 4000)]
+            for chunk in chunks:
+                bot.send_message(chat_id, chunk, parse_mode="HTML")
+                time.sleep(0.4)
         return
 
     # Send each complete section as its own bubble
