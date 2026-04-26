@@ -58,6 +58,10 @@ BATCH_WAIT = 10  # seconds to wait after last message
 user_batches = {}       # user_id → list of messages
 user_timers = {}        # user_id → threading.Timer
 
+# Conversation history — last 6 exchanges per user (3 Q&A pairs)
+user_history = {}       # user_id → [{"role": "user/assistant", "text": "..."}]
+MAX_HISTORY = 6
+
 
 # =========================
 # SMALL TALK DETECTION
@@ -207,11 +211,20 @@ def search_vertex(question):
 # =========================
 # GEMINI — ANSWER FROM KB
 # =========================
-def ask_ai(context, question):
+def ask_ai(context, question, history=None):
     if not context:
         return None
 
     context_text = "\n\n".join(context)
+
+    # Build conversation history string
+    history_text = ""
+    if history:
+        history_text = "\n\nCONVERSATION SO FAR:\n"
+        for h in history:
+            role = "User" if h["role"] == "user" else "Ahmad"
+            history_text += f"{role}: {h['text']}\n"
+        history_text += "\n(Use the above context to understand follow-up questions)\n"
 
     prompt = f"""
 You are Ahmad, a helpful AI assistant for MYNIC — Malaysia's domain registry.
@@ -229,7 +242,7 @@ RULES:
 - For URLs in the source content: ONLY share links that are action-based (registration portals, login pages, forms, official service pages). Do NOT share links that lead to articles, blog posts, "read more", or "learn more" pages
 - If the info is not enough to answer, reply exactly: INSUFFICIENT
 - Never add facts from outside the provided info
-
+{history_text}
 --- INFO ---
 {context_text}
 --- END INFO ---
@@ -338,6 +351,9 @@ def process_batch(user_id):
         text = " ".join(messages)
         print(f"\n📦 BATCH FROM {user_id}: {text}", flush=True)
 
+        # Get conversation history for this user
+        history = user_history.get(user_id, [])
+
         # ─────────────────────────────
         # USER: small talk
         # ─────────────────────────────
@@ -353,9 +369,17 @@ def process_batch(user_id):
         bot.send_message(user_id, thinking)
 
         context = search_vertex(text)
-        ai      = ask_ai(context, text) if context else None
+        ai      = ask_ai(context, text, history=history) if context else None
 
         if ai and "INSUFFICIENT" not in ai.upper():
+            # Save to conversation history
+            if user_id not in user_history:
+                user_history[user_id] = []
+            user_history[user_id].append({"role": "user", "text": text})
+            user_history[user_id].append({"role": "assistant", "text": ai})
+            # Keep only last MAX_HISTORY entries
+            user_history[user_id] = user_history[user_id][-MAX_HISTORY:]
+
             send_in_bubbles(user_id, ai)
             return
 
