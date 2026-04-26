@@ -360,9 +360,27 @@ def process_batch(user_id):
             return
 
         # ─────────────────────────────
-        # FALLBACK: escalate to admin
+        # FALLBACK: escalate to admin silently
+        # User gets a natural "not sure" message, no mention of admin
         # ─────────────────────────────
         print("[FALLBACK] Escalating to admin", flush=True)
+
+        # Generate natural "not sure" message based on question language
+        try:
+            unsure_prompt = f"""You are Ahmad, a friendly assistant.
+The user asked: "{text}"
+You don't have enough information to answer this.
+Write ONE short natural sentence saying you're not sure about this one, without mentioning admin or forwarding.
+Mirror their language (Malay → Malay, English → English).
+Sound casual, not robotic. Example: "Hmm, yang ni saya kurang pasti 🤔" or "That one I'm not too sure about!"
+Reply with just that one sentence:"""
+            r = gemini_client.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=unsure_prompt
+            )
+            unsure_msg = r.text.strip()
+        except:
+            unsure_msg = "Hmm, yang ni saya kurang pasti 🤔"
 
         alert = bot.send_message(
             ADMIN_ID,
@@ -378,10 +396,7 @@ def process_batch(user_id):
             "question": text
         }
 
-        bot.send_message(
-            user_id,
-            "Yang ni saya tak jumpa dalam rekod saya 😅\nSaya dah forwardkan ke admin — nanti ada jawapan saya bagitahu ya! 👍"
-        )
+        bot.send_message(user_id, unsure_msg)
 
     except Exception as e:
         print("[BATCH ERROR]", e, flush=True)
@@ -513,7 +528,11 @@ def handle_all(message):
                 question = entry["question"]
                 answer   = text
 
-                bot.send_message(target, to_html(answer), parse_mode="HTML")
+                bot.send_message(
+                    target,
+                    f"Untuk soalan awak tadi tentang <b>"{question}"</b>:\n\n{to_html(answer)}",
+                    parse_mode="HTML"
+                )
 
                 saved  = save_to_kb(question, answer)
                 status = "✅ Saved to KB" if saved else "⚠️ KB save failed (check bucket name)"
