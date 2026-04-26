@@ -528,11 +528,8 @@ def handle_all(message):
                 question = entry["question"]
                 answer   = text
 
-                bot.send_message(
-                    target,
-                    f"Untuk soalan awak tadi tentang <b>"{question}"</b>:\n\n{to_html(answer)}",
-                    parse_mode="HTML"
-                )
+                context_msg = f"Untuk soalan awak tadi tentang <b>{question}</b>:\n\n{to_html(answer)}"
+                bot.send_message(target, context_msg, parse_mode="HTML")
 
                 saved  = save_to_kb(question, answer)
                 status = "✅ Saved to KB" if saved else "⚠️ KB save failed (check bucket name)"
